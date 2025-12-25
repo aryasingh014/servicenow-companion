@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 interface ServiceNowRequest {
-  action: 'getArticleCount' | 'getIncidentCount' | 'getArticle' | 'getIncident' | 'createIncident' | 'searchArticles' | 'getCatalogItems';
+  action: 'getArticleCount' | 'getIncidentCount' | 'getCatalogItemCount' | 'getArticle' | 'getIncident' | 'createIncident' | 'searchArticles' | 'getCatalogItems';
   params?: Record<string, unknown>;
 }
 
@@ -42,6 +42,10 @@ serve(async (req) => {
 
       case 'getIncidentCount':
         endpoint = '/api/now/stats/incident?sysparm_count=true';
+        break;
+
+      case 'getCatalogItemCount':
+        endpoint = '/api/now/stats/sc_cat_item?sysparm_count=true';
         break;
 
       case 'getArticle':

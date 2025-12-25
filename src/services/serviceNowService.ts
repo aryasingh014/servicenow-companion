@@ -19,7 +19,18 @@ export class ServiceNowService {
     });
     
     if (error) throw new Error(error.message);
-    return data?.result?.stats?.count || 0;
+    console.log('Incident count response:', data);
+    return parseInt(data?.result?.stats?.count || '0', 10);
+  }
+
+  async getCatalogItemCount(): Promise<number> {
+    const { data, error } = await supabase.functions.invoke('servicenow-api', {
+      body: { action: 'getCatalogItemCount' }
+    });
+    
+    if (error) throw new Error(error.message);
+    console.log('Catalog item count response:', data);
+    return parseInt(data?.result?.stats?.count || '0', 10);
   }
 
   async getArticleByNumber(number: string): Promise<KnowledgeArticle | null> {
