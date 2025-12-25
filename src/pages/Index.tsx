@@ -6,6 +6,7 @@ import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
 import { ChatMessage } from "@/components/ChatMessage";
 import { QuickActions } from "@/components/QuickActions";
+import { ServiceNowDashboard } from "@/components/ServiceNowDashboard";
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useConversation } from "@/hooks/useConversation";
@@ -233,6 +234,11 @@ const Index = () => {
                 </>
               )}
             </motion.button>
+
+            {/* Dashboard */}
+            <div className="w-full mt-6">
+              <ServiceNowDashboard />
+            </div>
           </div>
         </motion.section>
 
