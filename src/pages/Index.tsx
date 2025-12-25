@@ -1,6 +1,6 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Send, Trash2, Volume2, VolumeX, Database, Wifi, WifiOff } from "lucide-react";
 import { Header } from "@/components/Header";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -9,17 +9,17 @@ import { QuickActions } from "@/components/QuickActions";
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useConversation } from "@/hooks/useConversation";
-import { MockServiceNowService, processUserMessage } from "@/services/mockServiceNow";
+import { serviceNow } from "@/services/serviceNowService";
+import { streamChat } from "@/services/chatService";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
-
-const serviceNow = new MockServiceNowService();
+import { Badge } from "@/components/ui/badge";
 
 const Index = () => {
   const [inputText, setInputText] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "error">("checking");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -43,6 +43,20 @@ const Index = () => {
 
   const { isSpeaking, speak, stop: stopSpeaking, isSupported: ttsSupported } = useTextToSpeech();
 
+  // Check ServiceNow connection on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        await serviceNow.getArticleCount();
+        setConnectionStatus("connected");
+      } catch (error) {
+        console.error("ServiceNow connection error:", error);
+        setConnectionStatus("error");
+      }
+    };
+    checkConnection();
+  }, []);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -62,31 +76,59 @@ const Index = () => {
       addMessage("user", message);
       setIsProcessing(true);
 
+      let assistantResponse = "";
+
       try {
-        const { response, contextUpdates } = await processUserMessage(
-          message,
+        // Convert messages to the format expected by the API
+        const chatMessages = messages
+          .filter((m) => m.id !== "welcome")
+          .map((m) => ({ role: m.role, content: m.content }));
+        chatMessages.push({ role: "user" as const, content: message });
+
+        await streamChat({
+          messages: chatMessages,
           context,
-          serviceNow
-        );
+          onDelta: (chunk) => {
+            assistantResponse += chunk;
+            // Update or add the assistant message
+            const existingMessages = messages;
+            const lastMessage = existingMessages[existingMessages.length - 1];
+            if (lastMessage?.role === "assistant" && lastMessage.id.startsWith("streaming-")) {
+              // This is handled by state update in addMessage
+            }
+          },
+          onDone: () => {
+            addMessage("assistant", assistantResponse);
+            setIsProcessing(false);
 
-        addMessage("assistant", response);
-        updateContext(contextUpdates);
-
-        // Speak the response if voice is enabled
-        if (voiceEnabled && ttsSupported) {
-          speak(response.replace(/\*\*/g, "").replace(/•/g, ""));
-        }
+            // Speak the response if voice is enabled
+            if (voiceEnabled && ttsSupported && assistantResponse) {
+              speak(assistantResponse.replace(/\*\*/g, "").replace(/•/g, "").replace(/\n/g, " "));
+            }
+          },
+          onError: (error) => {
+            console.error("Chat error:", error);
+            addMessage("assistant", "I apologize, but I encountered an error processing your request. Please try again.");
+            setIsProcessing(false);
+            toast({
+              variant: "destructive",
+              title: "Error",
+              description: error.message,
+            });
+          },
+        });
       } catch (error) {
+        console.error("Error:", error);
+        addMessage("assistant", "I apologize, but I encountered an error. Please try again.");
+        setIsProcessing(false);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to process your request. Please try again.",
+          description: "Failed to process your request.",
         });
-      } finally {
-        setIsProcessing(false);
       }
     },
-    [context, addMessage, updateContext, setIsProcessing, voiceEnabled, speak, ttsSupported, toast]
+    [messages, context, addMessage, setIsProcessing, voiceEnabled, speak, ttsSupported, toast]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -120,6 +162,31 @@ const Index = () => {
       />
 
       <Header />
+
+      {/* Connection Status */}
+      <div className="absolute top-20 right-6 z-10">
+        <Badge
+          variant={connectionStatus === "connected" ? "default" : "destructive"}
+          className="flex items-center gap-1.5"
+        >
+          {connectionStatus === "connected" ? (
+            <>
+              <Wifi className="w-3 h-3" />
+              <span>ServiceNow Connected</span>
+            </>
+          ) : connectionStatus === "error" ? (
+            <>
+              <WifiOff className="w-3 h-3" />
+              <span>Connection Error</span>
+            </>
+          ) : (
+            <>
+              <Database className="w-3 h-3 animate-pulse" />
+              <span>Connecting...</span>
+            </>
+          )}
+        </Badge>
+      </div>
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left Panel - Voice Interface */}
@@ -204,7 +271,7 @@ const Index = () => {
                     />
                   ))}
                 </div>
-                <span className="text-sm">Processing...</span>
+                <span className="text-sm">Connecting to ServiceNow...</span>
               </motion.div>
             )}
 
