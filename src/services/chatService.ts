@@ -17,6 +17,7 @@ export async function streamChat({
   onError: (error: Error) => void;
 }) {
   try {
+    console.time('chatStreamAPI');
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`,
       {
@@ -28,6 +29,7 @@ export async function streamChat({
         body: JSON.stringify({ messages, context }),
       }
     );
+    console.timeEnd('chatStreamAPI');
 
     if (response.status === 429) {
       onError(new Error("Rate limit exceeded. Please wait a moment and try again."));

@@ -66,12 +66,21 @@ serve(async (req) => {
       case 'createIncident':
         endpoint = '/api/now/table/incident';
         method = 'POST';
+        // Create a NEW incident - ServiceNow will auto-generate a unique number
+        // DO NOT include number, sys_id, or any existing identifiers - let ServiceNow generate them
         body = JSON.stringify({
           short_description: params?.short_description,
           description: params?.description,
           urgency: params?.urgency || '2',
           impact: params?.impact || '2',
           category: params?.category,
+          state: '1', // Explicitly set to New (1) to ensure it's a new incident
+        });
+        console.log('📝 Creating incident with data:', {
+          short_description: params?.short_description?.substring(0, 50),
+          urgency: params?.urgency,
+          impact: params?.impact,
+          state: '1 (New)'
         });
         break;
 
@@ -102,7 +111,31 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    console.log('ServiceNow response:', JSON.stringify(data).substring(0, 500));
+    
+    // Enhanced logging for incident creation
+    if (action === 'createIncident') {
+      console.log('✅ Incident creation response:', {
+        number: data?.result?.number,
+        sys_id: data?.result?.sys_id,
+        short_description: data?.result?.short_description,
+        state: data?.result?.state,
+        opened_at: data?.result?.opened_at,
+        full_response: JSON.stringify(data).substring(0, 1000)
+      });
+      
+      // Verify we got a proper response
+      if (!data?.result?.number) {
+        console.error('❌ ServiceNow did not return an incident number in response:', data);
+        throw new Error('ServiceNow API did not return an incident number');
+      }
+      
+      if (!data?.result?.sys_id) {
+        console.error('❌ ServiceNow did not return a sys_id in response:', data);
+        throw new Error('ServiceNow API did not return a sys_id');
+      }
+    } else {
+      console.log('ServiceNow response:', JSON.stringify(data).substring(0, 500));
+    }
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

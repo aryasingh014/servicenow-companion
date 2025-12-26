@@ -3,13 +3,15 @@ import { KnowledgeArticle, Incident, ConversationContext } from "@/types/chat";
 
 export class ServiceNowService {
   async getArticleCount(): Promise<number> {
+    console.time('getArticleCount');
     const { data, error } = await supabase.functions.invoke('servicenow-api', {
       body: { action: 'getArticleCount' }
     });
-    
+
     if (error) throw new Error(error.message);
     console.log('Article count response:', data);
     // ServiceNow stats API returns count as string in result.stats.count
+    console.timeEnd('getArticleCount');
     return parseInt(data?.result?.stats?.count || '0', 10);
   }
 
@@ -53,12 +55,14 @@ export class ServiceNowService {
   }
 
   async searchArticles(query: string): Promise<KnowledgeArticle[]> {
+    console.time('searchArticles');
     const { data, error } = await supabase.functions.invoke('servicenow-api', {
       body: { action: 'searchArticles', params: { query } }
     });
-    
+
     if (error) throw new Error(error.message);
-    
+    console.timeEnd('searchArticles');
+
     return (data?.result || []).map((item: Record<string, unknown>) => ({
       sysId: item.sys_id as string,
       number: item.number as string,
