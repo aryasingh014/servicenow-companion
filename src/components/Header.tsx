@@ -1,7 +1,10 @@
 import { motion } from "framer-motion";
 import { Settings, Info } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export const Header = () => {
+  const navigate = useNavigate();
+
   return (
     <motion.header
       initial={{ opacity: 0, y: -20 }}
@@ -39,6 +42,7 @@ export const Header = () => {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           className="p-2 rounded-lg hover:bg-secondary/50 transition-colors"
+          onClick={() => navigate("/settings")}
         >
           <Settings className="w-5 h-5 text-muted-foreground" />
         </motion.button>

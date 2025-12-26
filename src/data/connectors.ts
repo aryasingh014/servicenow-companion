@@ -1,0 +1,222 @@
+import { Connector } from '@/types/connector';
+
+export const connectors: Connector[] = [
+  // Popular Connectors
+  {
+    id: 'confluence',
+    name: 'Confluence',
+    description: 'Connect to Atlassian Confluence for wiki and documentation',
+    icon: '📘',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'url', label: 'Confluence URL', type: 'url', required: true, placeholder: 'https://your-domain.atlassian.net' },
+      { name: 'email', label: 'Email', type: 'text', required: true, placeholder: 'your-email@company.com' },
+      { name: 'apiToken', label: 'API Token', type: 'password', required: true, placeholder: 'Your API token' },
+    ],
+  },
+  {
+    id: 'sharepoint',
+    name: 'SharePoint',
+    description: 'Connect to Microsoft SharePoint for document management',
+    icon: '📁',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'siteUrl', label: 'SharePoint Site URL', type: 'url', required: true, placeholder: 'https://your-org.sharepoint.com' },
+      { name: 'clientId', label: 'Client ID', type: 'text', required: true, placeholder: 'Azure AD App Client ID' },
+      { name: 'clientSecret', label: 'Client Secret', type: 'password', required: true, placeholder: 'Azure AD App Secret' },
+    ],
+  },
+  {
+    id: 'google-drive',
+    name: 'Google Drive',
+    description: 'Connect to Google Drive for file storage and sharing',
+    icon: '📂',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'clientId', label: 'OAuth Client ID', type: 'text', required: true, placeholder: 'Google Cloud OAuth Client ID' },
+      { name: 'clientSecret', label: 'OAuth Client Secret', type: 'password', required: true, placeholder: 'OAuth Client Secret' },
+    ],
+  },
+  {
+    id: 'jira',
+    name: 'Jira',
+    description: 'Connect to Atlassian Jira for issue tracking',
+    icon: '🎯',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'url', label: 'Jira URL', type: 'url', required: true, placeholder: 'https://your-domain.atlassian.net' },
+      { name: 'email', label: 'Email', type: 'text', required: true, placeholder: 'your-email@company.com' },
+      { name: 'apiToken', label: 'API Token', type: 'password', required: true, placeholder: 'Your API token' },
+    ],
+  },
+  {
+    id: 'zendesk',
+    name: 'Zendesk',
+    description: 'Connect to Zendesk for customer support',
+    icon: '🎧',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'subdomain', label: 'Subdomain', type: 'text', required: true, placeholder: 'your-company' },
+      { name: 'email', label: 'Email', type: 'text', required: true, placeholder: 'your-email@company.com' },
+      { name: 'apiToken', label: 'API Token', type: 'password', required: true, placeholder: 'Your API token' },
+    ],
+  },
+  {
+    id: 'servicenow',
+    name: 'ServiceNow',
+    description: 'Connect to ServiceNow for IT service management',
+    icon: '⚙️',
+    category: 'popular',
+    isConnected: true, // Already connected in this app
+    configFields: [
+      { name: 'instanceUrl', label: 'Instance URL', type: 'url', required: true, placeholder: 'https://your-instance.service-now.com' },
+      { name: 'username', label: 'Username', type: 'text', required: true, placeholder: 'admin' },
+      { name: 'password', label: 'Password', type: 'password', required: true, placeholder: 'Your password' },
+    ],
+  },
+  {
+    id: 'slack',
+    name: 'Slack',
+    description: 'Connect to Slack for team communication',
+    icon: '💬',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'botToken', label: 'Bot Token', type: 'password', required: true, placeholder: 'xoxb-your-bot-token' },
+      { name: 'appToken', label: 'App Token', type: 'password', required: false, placeholder: 'xapp-your-app-token' },
+    ],
+  },
+  {
+    id: 'salesforce',
+    name: 'Salesforce',
+    description: 'Connect to Salesforce CRM',
+    icon: '☁️',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'instanceUrl', label: 'Instance URL', type: 'url', required: true, placeholder: 'https://your-org.salesforce.com' },
+      { name: 'clientId', label: 'Consumer Key', type: 'text', required: true, placeholder: 'Connected App Consumer Key' },
+      { name: 'clientSecret', label: 'Consumer Secret', type: 'password', required: true, placeholder: 'Connected App Consumer Secret' },
+    ],
+  },
+  {
+    id: 'hubspot',
+    name: 'HubSpot',
+    description: 'Connect to HubSpot for marketing and CRM',
+    icon: '🧡',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'apiKey', label: 'Private App Token', type: 'password', required: true, placeholder: 'Your HubSpot Private App Token' },
+    ],
+  },
+  {
+    id: 'gong',
+    name: 'Gong',
+    description: 'Connect to Gong for conversation intelligence',
+    icon: '🔔',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'accessKey', label: 'Access Key', type: 'text', required: true, placeholder: 'Your Gong Access Key' },
+      { name: 'accessSecret', label: 'Access Secret', type: 'password', required: true, placeholder: 'Your Gong Access Secret' },
+    ],
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    description: 'Connect to GitHub for code repositories',
+    icon: '🐙',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'accessToken', label: 'Personal Access Token', type: 'password', required: true, placeholder: 'ghp_your_token' },
+      { name: 'organization', label: 'Organization (optional)', type: 'text', required: false, placeholder: 'your-org' },
+    ],
+  },
+  {
+    id: 'web',
+    name: 'Web',
+    description: 'Crawl and index web pages',
+    icon: '🌐',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      { name: 'urls', label: 'URLs to crawl', type: 'text', required: true, placeholder: 'https://example.com, https://docs.example.com' },
+      { name: 'depth', label: 'Crawl Depth', type: 'select', required: true, options: [
+        { value: '1', label: '1 level' },
+        { value: '2', label: '2 levels' },
+        { value: '3', label: '3 levels' },
+      ]},
+    ],
+  },
+  {
+    id: 'file',
+    name: 'File',
+    description: 'Upload and index local files',
+    icon: '📄',
+    category: 'popular',
+    isConnected: false,
+    configFields: [],
+  },
+  // Knowledge Base & Wikis
+  {
+    id: 'notion',
+    name: 'Notion',
+    description: 'Connect to Notion for notes and wikis',
+    icon: '📝',
+    category: 'knowledge',
+    isConnected: false,
+    configFields: [
+      { name: 'integrationToken', label: 'Integration Token', type: 'password', required: true, placeholder: 'secret_your_token' },
+    ],
+  },
+  {
+    id: 'bookstack',
+    name: 'BookStack',
+    description: 'Connect to BookStack documentation platform',
+    icon: '📚',
+    category: 'knowledge',
+    isConnected: false,
+    configFields: [
+      { name: 'url', label: 'BookStack URL', type: 'url', required: true, placeholder: 'https://your-bookstack.com' },
+      { name: 'tokenId', label: 'Token ID', type: 'text', required: true, placeholder: 'Your Token ID' },
+      { name: 'tokenSecret', label: 'Token Secret', type: 'password', required: true, placeholder: 'Your Token Secret' },
+    ],
+  },
+  {
+    id: 'document360',
+    name: 'Document360',
+    description: 'Connect to Document360 knowledge base',
+    icon: '📖',
+    category: 'knowledge',
+    isConnected: false,
+    configFields: [
+      { name: 'apiKey', label: 'API Key', type: 'password', required: true, placeholder: 'Your Document360 API Key' },
+      { name: 'projectId', label: 'Project ID', type: 'text', required: true, placeholder: 'Your Project ID' },
+    ],
+  },
+  {
+    id: 'discourse',
+    name: 'Discourse',
+    description: 'Connect to Discourse community forums',
+    icon: '💭',
+    category: 'knowledge',
+    isConnected: false,
+    configFields: [
+      { name: 'url', label: 'Discourse URL', type: 'url', required: true, placeholder: 'https://your-forum.discourse.org' },
+      { name: 'apiKey', label: 'API Key', type: 'password', required: true, placeholder: 'Your Discourse API Key' },
+      { name: 'apiUsername', label: 'API Username', type: 'text', required: true, placeholder: 'system' },
+    ],
+  },
+];
+
+export const connectorCategories = [
+  { id: 'popular', name: 'Popular Connectors', icon: '⭐' },
+  { id: 'knowledge', name: 'Knowledge Base & Wikis', icon: '📚' },
+] as const;
