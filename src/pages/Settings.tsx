@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { ArrowLeft, Search } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { ConnectorCard } from "@/components/ConnectorCard";
@@ -8,6 +8,7 @@ import { ConnectorConfigDialog } from "@/components/ConnectorConfigDialog";
 import { connectors as defaultConnectors, connectorCategories } from "@/data/connectors";
 import { Connector, ConnectorConfig } from "@/types/connector";
 import { toast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 
 const STORAGE_KEY = "connected-sources";
 
@@ -98,8 +99,8 @@ export default function Settings() {
     );
     
     toast({
-      title: connector?.isConnected ? "Configuration Updated" : "Connected Successfully",
-      description: `${connector?.name} is now ${connector?.isConnected ? "reconfigured" : "connected"} and ready to use.`,
+      title: connector?.isConnected ? "Configuration Updated" : "Connected Successfully! 🎉",
+      description: `${connector?.name} is now ready. Ask NOVA anything about your ${connector?.name} data!`,
     });
   };
 
@@ -114,7 +115,8 @@ export default function Settings() {
       connector.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const connectedCount = connectorList.filter((c) => c.isConnected).length;
+  const connectedConnectors = connectorList.filter((c) => c.isConnected);
+  const connectedCount = connectedConnectors.length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -131,16 +133,78 @@ export default function Settings() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h1 className="text-xl font-display font-semibold">Settings</h1>
+          <div className="flex-1">
+            <h1 className="text-xl font-display font-semibold">Data Sources</h1>
             <p className="text-sm text-muted-foreground">
-              {connectedCount} connector{connectedCount !== 1 ? "s" : ""} connected
+              Connect your tools to unlock AI-powered insights
             </p>
           </div>
         </div>
       </motion.header>
 
       <main className="max-w-4xl mx-auto px-6 py-8">
+        {/* Connected Sources Summary */}
+        <AnimatePresence>
+          {connectedCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-8"
+            >
+              <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 rounded-lg bg-primary/20">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold">Your Connected Sources</h2>
+                    <p className="text-sm text-muted-foreground">
+                      NOVA can now search and answer questions from these sources
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {connectedConnectors.map((connector) => (
+                    <Badge
+                      key={connector.id}
+                      variant="secondary"
+                      className="gap-1.5 py-1.5 px-3 bg-background/50"
+                    >
+                      <span>{connector.icon}</span>
+                      {connector.name}
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Getting Started Banner (when no sources connected) */}
+        <AnimatePresence>
+          {connectedCount === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-8"
+            >
+              <div className="rounded-xl bg-gradient-to-br from-secondary/80 to-secondary/40 border border-border p-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
+                  <Link2 className="w-6 h-6 text-primary" />
+                </div>
+                <h2 className="text-lg font-semibold mb-2">Connect Your First Source</h2>
+                <p className="text-muted-foreground text-sm mb-4 max-w-md mx-auto">
+                  Choose a data source below to get started. Once connected, you can ask NOVA 
+                  questions about your data - no coding required!
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Search */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
