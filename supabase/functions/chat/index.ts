@@ -521,7 +521,7 @@ serve(async (req) => {
     
     const conversationContext = messages
       .slice(-5)
-      .map(m => `${m.role}: ${m.content}`)
+      .map((m: { role: string; content: string }) => `${m.role}: ${m.content}`)
       .join('\n');
 
     // Learn from user corrections in real-time (non-blocking)
@@ -622,7 +622,7 @@ serve(async (req) => {
 
     // If no intents detected but user asked about counts, try to infer from conversation context
     if (intents.length === 0) {
-      const conversationText = messages.map(m => m.content).join(' ').toLowerCase();
+      const conversationText = messages.map((m: { role: string; content: string }) => m.content).join(' ').toLowerCase();
       const lowerMessage = userMessage.toLowerCase();
       
       // Check if user is asking for a count/total

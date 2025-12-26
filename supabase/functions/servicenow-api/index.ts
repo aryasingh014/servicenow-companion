@@ -77,7 +77,7 @@ serve(async (req) => {
           state: '1', // Explicitly set to New (1) to ensure it's a new incident
         });
         console.log('📝 Creating incident with data:', {
-          short_description: params?.short_description?.substring(0, 50),
+          short_description: typeof params?.short_description === 'string' ? params.short_description.substring(0, 50) : params?.short_description,
           urgency: params?.urgency,
           impact: params?.impact,
           state: '1 (New)'

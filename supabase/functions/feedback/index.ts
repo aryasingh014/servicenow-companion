@@ -109,13 +109,13 @@ const adjustmentRules: Array<{
 
 function analyzeFeedback(feedback: FeedbackData[]): FeedbackAnalysis {
   const total = feedback.length;
-  const ratings = feedback.map(f => {
+  const ratings: number[] = feedback.map(f => {
     if (f.rating === 'positive') return 1;
     if (f.rating === 'negative') return -1;
     return 0;
   });
   const averageRating = total > 0 
-    ? ratings.reduce((a, b) => a + b, 0) / total 
+    ? ratings.reduce((a: number, b: number) => a + b, 0) / total 
     : 0;
 
   const categoryBreakdown: Record<string, number> = {};
