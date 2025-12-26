@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Settings, Info } from "lucide-react";
+import { Settings, Info, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export const Header = () => {
@@ -14,7 +14,7 @@ export const Header = () => {
       <div className="flex items-center gap-3">
         {/* Logo */}
         <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-primary/50 flex items-center justify-center glow-primary">
-          <span className="font-display font-bold text-primary text-lg">S</span>
+          <Sparkles className="w-5 h-5 text-primary" />
           <motion.div
             className="absolute inset-0 rounded-xl border border-primary/30"
             animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.2, 0.5] }}
@@ -23,10 +23,9 @@ export const Header = () => {
         </div>
         <div>
           <h1 className="font-display text-lg font-semibold tracking-wide">
-            <span className="text-primary">Service</span>
-            <span className="text-foreground">Now</span>
+            <span className="text-primary">NOVA</span>
           </h1>
-          <p className="text-xs text-muted-foreground">Voice Assistant</p>
+          <p className="text-xs text-muted-foreground">Universal AI Assistant</p>
         </div>
       </div>
 

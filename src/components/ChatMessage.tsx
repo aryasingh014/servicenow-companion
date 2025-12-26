@@ -47,11 +47,6 @@ export const ChatMessage = ({ role, content, timestamp }: ChatMessageProps) => {
         >
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
         </div>
-        {timestamp && (
-          <span className="text-xs text-muted-foreground mt-1 block px-1">
-            {timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </span>
-        )}
       </div>
     </motion.div>
   );
