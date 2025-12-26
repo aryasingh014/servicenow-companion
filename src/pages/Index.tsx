@@ -119,7 +119,7 @@ const Index = () => {
         });
       }
     },
-    [messages, context, addMessage, setIsProcessing, voiceEnabled, speak, ttsSupported, toast]
+    [messages, addMessage, setIsProcessing, voiceEnabled, speak, ttsSupported, toast]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
