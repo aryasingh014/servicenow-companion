@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { FileText, AlertCircle, ShoppingCart, HelpCircle } from "lucide-react";
+import { Search, FolderOpen, MessageSquare, Settings } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface QuickActionsProps {
   onAction: (action: string) => void;
@@ -7,32 +8,28 @@ interface QuickActionsProps {
 
 const actions = [
   {
-    icon: FileText,
-    label: "Knowledge Articles",
-    query: "How many knowledge articles are there?",
+    icon: Search,
+    label: "Search Data",
+    query: "What information can you help me find?",
     color: "from-cyan-500/20 to-blue-500/20",
   },
   {
-    icon: AlertCircle,
-    label: "View Incidents",
-    query: "How many incidents are in the system?",
+    icon: FolderOpen,
+    label: "Browse Files",
+    query: "Show me my recent files and documents",
     color: "from-orange-500/20 to-red-500/20",
   },
   {
-    icon: ShoppingCart,
-    label: "Service Catalog",
-    query: "Show me the service catalog items",
+    icon: MessageSquare,
+    label: "Ask Question",
+    query: "What can you help me with today?",
     color: "from-purple-500/20 to-pink-500/20",
-  },
-  {
-    icon: HelpCircle,
-    label: "Create Incident",
-    query: "I want to create a new incident",
-    color: "from-green-500/20 to-teal-500/20",
   },
 ];
 
 export const QuickActions = ({ onAction }: QuickActionsProps) => {
+  const navigate = useNavigate();
+
   return (
     <div className="grid grid-cols-2 gap-3">
       {actions.map((action, index) => (
@@ -53,6 +50,21 @@ export const QuickActions = ({ onAction }: QuickActionsProps) => {
           </div>
         </motion.button>
       ))}
+      
+      {/* Connect Sources Button */}
+      <motion.button
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        onClick={() => navigate("/settings")}
+        className="group relative p-4 rounded-xl glass-surface border border-border/50 hover:border-primary/50 transition-all duration-300"
+      >
+        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-green-500/20 to-teal-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <div className="relative flex items-center gap-3">
+          <Settings className="w-5 h-5 text-primary" />
+          <span className="text-sm font-medium">Connect Sources</span>
+        </div>
+      </motion.button>
     </div>
   );
 };
