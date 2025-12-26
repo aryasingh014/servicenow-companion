@@ -16,7 +16,7 @@ export const useConversation = (): UseConversationReturn => {
     {
       id: "welcome",
       role: "assistant",
-      content: "Hello! I'm your ServiceNow voice assistant. I can help you with knowledge articles, incidents, and the service catalog. How can I assist you today?",
+      content: "Hello! I'm NOVA, your universal AI assistant. I can help you search and find information from any connected data source. Go to Settings to connect your tools like Google Drive, Confluence, Jira, ServiceNow, and more. How can I help you today?",
       timestamp: new Date(),
     },
   ]);

@@ -1,34 +1,33 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, Volume2, VolumeX, Database, Wifi, WifiOff } from "lucide-react";
+import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle } from "lucide-react";
 import { Header } from "@/components/Header";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
 import { ChatMessage } from "@/components/ChatMessage";
 import { QuickActions } from "@/components/QuickActions";
-import { ServiceNowDashboard } from "@/components/ServiceNowDashboard";
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useConversation } from "@/hooks/useConversation";
-import { serviceNow } from "@/services/serviceNowService";
 import { streamChat } from "@/services/chatService";
+import { getConnectedSources } from "@/services/connectorService";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const [inputText, setInputText] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "error">("checking");
+  const [connectedSources, setConnectedSources] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const {
     messages,
-    context,
     addMessage,
-    updateContext,
     clearMessages,
     isProcessing,
     setIsProcessing,
@@ -44,18 +43,10 @@ const Index = () => {
 
   const { isSpeaking, speak, stop: stopSpeaking, isSupported: ttsSupported } = useTextToSpeech();
 
-  // Check ServiceNow connection on mount
+  // Check connected sources on mount
   useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        await serviceNow.getArticleCount();
-        setConnectionStatus("connected");
-      } catch (error) {
-        console.error("ServiceNow connection error:", error);
-        setConnectionStatus("error");
-      }
-    };
-    checkConnection();
+    const sources = getConnectedSources();
+    setConnectedSources(sources.map(s => s.name));
   }, []);
 
   // Scroll to bottom when messages change
@@ -88,7 +79,6 @@ const Index = () => {
 
         await streamChat({
           messages: chatMessages,
-          context,
           onDelta: (chunk) => {
             assistantResponse += chunk;
             // Update or add the assistant message
@@ -167,23 +157,19 @@ const Index = () => {
       {/* Connection Status */}
       <div className="absolute top-20 right-6 z-10">
         <Badge
-          variant={connectionStatus === "connected" ? "default" : "destructive"}
-          className="flex items-center gap-1.5"
+          variant={connectedSources.length > 0 ? "default" : "secondary"}
+          className="flex items-center gap-1.5 cursor-pointer"
+          onClick={() => navigate("/settings")}
         >
-          {connectionStatus === "connected" ? (
+          {connectedSources.length > 0 ? (
             <>
-              <Wifi className="w-3 h-3" />
-              <span>ServiceNow Connected</span>
-            </>
-          ) : connectionStatus === "error" ? (
-            <>
-              <WifiOff className="w-3 h-3" />
-              <span>Connection Error</span>
+              <CheckCircle2 className="w-3 h-3" />
+              <span>{connectedSources.length} source{connectedSources.length !== 1 ? 's' : ''} connected</span>
             </>
           ) : (
             <>
-              <Database className="w-3 h-3 animate-pulse" />
-              <span>Connecting...</span>
+              <AlertCircle className="w-3 h-3" />
+              <span>No sources connected</span>
             </>
           )}
         </Badge>
@@ -235,10 +221,17 @@ const Index = () => {
               )}
             </motion.button>
 
-            {/* Dashboard */}
-            <div className="w-full mt-6">
-              <ServiceNowDashboard />
-            </div>
+            {/* Connected Sources */}
+            {connectedSources.length > 0 && (
+              <div className="w-full mt-4 p-4 rounded-lg bg-secondary/30 border border-border/50">
+                <p className="text-xs text-muted-foreground mb-2">Connected sources:</p>
+                <div className="flex flex-wrap gap-1">
+                  {connectedSources.map((name) => (
+                    <Badge key={name} variant="outline" className="text-xs">{name}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </motion.section>
 

@@ -1,32 +1,40 @@
-import { supabase } from "@/integrations/supabase/client";
-import { ConversationContext } from "@/types/chat";
+import { getConnectedSources, ConnectedSource } from "./connectorService";
 
 type Message = { role: "user" | "assistant"; content: string };
 
 export async function streamChat({
   messages,
-  context,
   onDelta,
   onDone,
   onError,
 }: {
   messages: Message[];
-  context?: ConversationContext;
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError: (error: Error) => void;
 }) {
   try {
+    // Get connected sources for the universal chat
+    const connectedSources = getConnectedSources();
+    
     console.time('chatStreamAPI');
     const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`,
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/universal-chat`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages, context }),
+        body: JSON.stringify({ 
+          messages, 
+          connectedSources: connectedSources.map(s => ({
+            id: s.id,
+            name: s.name,
+            type: s.type,
+            config: s.config,
+          })),
+        }),
       }
     );
     console.timeEnd('chatStreamAPI');
