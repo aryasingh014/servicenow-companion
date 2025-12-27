@@ -24,12 +24,50 @@ const AVAILABLE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "servicenow_search_articles",
-      description: "Search ServiceNow knowledge base articles. Use this when user asks about documentation, how-to guides, or knowledge articles.",
+      name: "servicenow_get_article_count",
+      description: "Get the total number of knowledge articles in ServiceNow. ALWAYS use this when user asks 'how many articles', 'total articles', 'article count', 'number of articles'.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "servicenow_get_incident_count",
+      description: "Get the total number of incidents in ServiceNow. ALWAYS use this when user asks 'how many incidents', 'total incidents', 'incident count', 'number of incidents'.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "servicenow_get_article_by_number",
+      description: "Get a specific knowledge article by its number (e.g., KB0000001, KB0010002). Use this when user provides a KB article number.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query for knowledge articles" }
+          article_number: { type: "string", description: "Article number like KB0000001" }
+        },
+        required: ["article_number"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "servicenow_search_articles",
+      description: "Search ServiceNow knowledge base articles by keywords. Use for finding articles about topics, not for specific article numbers.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search keywords" }
         },
         required: ["query"]
       }
@@ -53,13 +91,13 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "servicenow_list_incidents",
-      description: "List recent ServiceNow incidents with details, optionally filtered by status or priority. Use this ONLY when user wants to see a list of incidents with details (like 'show me incidents', 'list recent incidents', 'show open incidents'). DO NOT use this for count queries - use servicenow_get_incident_count instead for 'how many incidents' queries.",
+      description: "List recent ServiceNow incidents. Use when user wants to see incidents list.",
       parameters: {
         type: "object",
         properties: {
-          status: { type: "string", enum: ["new", "in_progress", "resolved", "closed"], description: "Filter by incident status" },
-          priority: { type: "string", enum: ["1", "2", "3", "4", "5"], description: "Filter by priority (1=Critical, 5=Planning)" },
-          limit: { type: "number", description: "Max results to return (default 10)" }
+          status: { type: "string", enum: ["new", "in_progress", "resolved", "closed"], description: "Filter by status" },
+          priority: { type: "string", enum: ["1", "2", "3", "4", "5"], description: "Filter by priority" },
+          limit: { type: "number", description: "Max results (default 10)" }
         }
       }
     }
@@ -72,7 +110,7 @@ const AVAILABLE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          short_description: { type: "string", description: "Brief description of the incident" },
+          short_description: { type: "string", description: "Brief description" },
           description: { type: "string", description: "Detailed description" },
           urgency: { type: "string", enum: ["1", "2", "3"], description: "1=High, 2=Medium, 3=Low" },
           impact: { type: "string", enum: ["1", "2", "3"], description: "1=High, 2=Medium, 3=Low" }
@@ -81,42 +119,17 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
-  {
-    type: "function",
-    function: {
-      name: "servicenow_get_article_count",
-      description: "Get the total number of knowledge articles in ServiceNow. ALWAYS use this function when user asks: 'how many articles', 'how many knowledge articles', 'total articles', 'total knowledge articles', 'article count', 'number of articles', 'count of articles', 'how many knowledge articles are there', 'what is the total number of knowledge articles', or any variation asking for the count/total/number of knowledge articles. This function returns the exact count from ServiceNow.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: []
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "servicenow_get_incident_count",
-      description: "Get the total number of incidents in ServiceNow. ALWAYS use this function when user asks: 'how many incidents', 'total incidents', 'incident count', 'number of incidents', 'count of incidents', 'how many incidents are there', 'what is the total number of incidents', or any variation asking for the count/total/number of incidents. This function returns the exact count from ServiceNow.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: []
-      }
-    }
-  },
   // Google Drive tools
   {
     type: "function",
     function: {
       name: "google_drive_list_files",
-      description: "List all files in Google Drive. ALWAYS use this function when user asks: 'list files', 'list documents', 'show files', 'show documents', 'what files are in Google Drive', 'what documents are in Google Drive', 'list of files', 'list of documents', 'all files', 'all documents', or any variation asking to see/display/list files or documents from Google Drive. This function returns a list of all files in the connected Google Drive.",
+      description: "List files in Google Drive. Use when user asks to list, show, or see files.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Optional: filter files by name (leave empty to list all files)" }
-        },
-        required: []
+          query: { type: "string", description: "Optional filter" }
+        }
       }
     }
   },
@@ -124,11 +137,11 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "google_drive_search_files",
-      description: "Search for files in Google Drive by content or name. ALWAYS use this function when user asks to search, find, or look for files with specific keywords like 'milestone', 'pdf', 'project', 'report', etc. Use when user asks: 'search for files', 'find files', 'look for files', 'search documents', 'find documents', 'is there a file about X', 'do you have a file named X', or mentions specific keywords. This searches both file names and file content. Pass the search term as the query parameter.",
+      description: "Search Google Drive files by name or content.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query for file names or content. Extract keywords from user's request (e.g., if user says 'milestone pdf', use 'milestone' or 'milestone pdf' as query)" }
+          query: { type: "string", description: "Search keywords" }
         },
         required: ["query"]
       }
@@ -139,13 +152,13 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "jira_search_issues",
-      description: "Search Jira issues using text or JQL. Use for finding tickets, bugs, stories.",
+      description: "Search Jira issues",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search text or JQL query" },
-          project: { type: "string", description: "Project key to filter (optional)" },
-          status: { type: "string", description: "Status filter like 'Open', 'In Progress', 'Done'" }
+          query: { type: "string", description: "Search text or JQL" },
+          project: { type: "string", description: "Project key" },
+          status: { type: "string", description: "Status filter" }
         },
         required: ["query"]
       }
@@ -155,27 +168,27 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "jira_get_issue",
-      description: "Get details of a specific Jira issue by key (e.g., PROJ-123)",
+      description: "Get Jira issue details by key (e.g., PROJ-123)",
       parameters: {
         type: "object",
         properties: {
-          issue_key: { type: "string", description: "Issue key like PROJ-123" }
+          issue_key: { type: "string", description: "Issue key" }
         },
         required: ["issue_key"]
       }
     }
   },
-  // RAG search for documents (Google Drive, files, Confluence, etc.)
+  // RAG search
   {
     type: "function",
     function: {
       name: "search_documents",
-      description: "Search indexed documents from Google Drive, uploaded files, Confluence, and other document sources. Use this for finding information in documents, files, wikis, or knowledge bases.",
+      description: "Search indexed documents from uploaded files, Confluence, etc.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "Search query" },
-          source_type: { type: "string", description: "Filter by source: 'google-drive', 'file', 'confluence', or leave empty for all" }
+          source_type: { type: "string", description: "Filter by source" }
         },
         required: ["query"]
       }
@@ -206,13 +219,23 @@ async function executeServiceNow(
     let body: string | undefined;
 
     switch (functionName) {
-      case 'servicenow_search_articles':
+      case 'servicenow_get_article_by_number': {
+        const articleNumber = args.article_number as string;
+        if (!articleNumber) {
+          return { error: "Article number is required" };
+        }
+        endpoint = `/api/now/table/kb_knowledge?sysparm_query=number=${encodeURIComponent(articleNumber)}&sysparm_fields=sys_id,number,short_description,text,category,workflow_state&sysparm_limit=1`;
+        break;
+      }
+
+      case 'servicenow_search_articles': {
         const searchQuery = args.query as string;
         if (!searchQuery) {
           return { error: "Search query is required" };
         }
         endpoint = `/api/now/table/kb_knowledge?sysparm_query=short_descriptionLIKE${encodeURIComponent(searchQuery)}^ORtextLIKE${encodeURIComponent(searchQuery)}&sysparm_fields=sys_id,number,short_description,text,category,workflow_state&sysparm_limit=20`;
         break;
+      }
 
       case 'servicenow_get_incident':
         const incNum = args.incident_number as string;
@@ -354,6 +377,21 @@ async function executeServiceNow(
     const data = await response.json();
     
     // Format response for better AI understanding
+    if (functionName === 'servicenow_get_article_by_number' && data?.result) {
+      const articles = Array.isArray(data.result) ? data.result : [];
+      if (articles.length > 0) {
+        const article = articles[0];
+        return {
+          number: article.number,
+          title: article.short_description || '',
+          content: article.text || '',
+          category: article.category?.display_value || article.category || 'General',
+          status: article.workflow_state?.display_value || article.workflow_state || 'Published',
+        };
+      }
+      return { error: `Knowledge article ${args.article_number} not found` };
+    }
+    
     if (functionName === 'servicenow_search_articles' && data?.result) {
       const articles = Array.isArray(data.result) ? data.result : [];
       return articles.map((article: any) => ({
