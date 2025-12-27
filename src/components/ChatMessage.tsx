@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 import { Bot, User } from "lucide-react";
 
@@ -7,16 +8,18 @@ interface ChatMessageProps {
   timestamp?: Date;
 }
 
-export const ChatMessage = ({ role, content, timestamp }: ChatMessageProps) => {
-  const isUser = role === "user";
+export const ChatMessage = forwardRef<HTMLDivElement, ChatMessageProps>(
+  ({ role, content, timestamp }, ref) => {
+    const isUser = role === "user";
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-    >
+    return (
+      <motion.div
+        ref={ref}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}
+      >
       {/* Avatar */}
       <div
         className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
@@ -49,5 +52,8 @@ export const ChatMessage = ({ role, content, timestamp }: ChatMessageProps) => {
         </div>
       </div>
     </motion.div>
-  );
-};
+    );
+  }
+);
+
+ChatMessage.displayName = "ChatMessage";

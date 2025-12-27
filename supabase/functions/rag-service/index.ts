@@ -147,6 +147,7 @@ serve(async (req) => {
 
         // Generate query embedding for semantic search
         const queryEmbedding = await generateEmbedding(query);
+        console.log(`Query embedding generated: ${!!queryEmbedding}`);
 
         let results;
         if (queryEmbedding) {
@@ -187,9 +188,10 @@ serve(async (req) => {
         }
 
         console.log(`Found ${results.length} results`);
+        console.log(`Sample results: ${JSON.stringify(results.slice(0, 2)).substring(0, 500)}`);
 
-        return new Response(JSON.stringify({ 
-          success: true, 
+        return new Response(JSON.stringify({
+          success: true,
           results,
           searchType: queryEmbedding ? 'hybrid' : 'keyword',
         }), {

@@ -53,7 +53,7 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "servicenow_list_incidents",
-      description: "List recent ServiceNow incidents, optionally filtered by status or priority",
+      description: "List recent ServiceNow incidents with details, optionally filtered by status or priority. Use this ONLY when user wants to see a list of incidents with details (like 'show me incidents', 'list recent incidents', 'show open incidents'). DO NOT use this for count queries - use servicenow_get_incident_count instead for 'how many incidents' queries.",
       parameters: {
         type: "object",
         properties: {
@@ -78,6 +78,59 @@ const AVAILABLE_TOOLS = [
           impact: { type: "string", enum: ["1", "2", "3"], description: "1=High, 2=Medium, 3=Low" }
         },
         required: ["short_description"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "servicenow_get_article_count",
+      description: "Get the total number of knowledge articles in ServiceNow. ALWAYS use this function when user asks: 'how many articles', 'how many knowledge articles', 'total articles', 'total knowledge articles', 'article count', 'number of articles', 'count of articles', 'how many knowledge articles are there', 'what is the total number of knowledge articles', or any variation asking for the count/total/number of knowledge articles. This function returns the exact count from ServiceNow.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "servicenow_get_incident_count",
+      description: "Get the total number of incidents in ServiceNow. ALWAYS use this function when user asks: 'how many incidents', 'total incidents', 'incident count', 'number of incidents', 'count of incidents', 'how many incidents are there', 'what is the total number of incidents', or any variation asking for the count/total/number of incidents. This function returns the exact count from ServiceNow.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  // Google Drive tools
+  {
+    type: "function",
+    function: {
+      name: "google_drive_list_files",
+      description: "List all files in Google Drive. ALWAYS use this function when user asks: 'list files', 'list documents', 'show files', 'show documents', 'what files are in Google Drive', 'what documents are in Google Drive', 'list of files', 'list of documents', 'all files', 'all documents', or any variation asking to see/display/list files or documents from Google Drive. This function returns a list of all files in the connected Google Drive.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional: filter files by name (leave empty to list all files)" }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "google_drive_search_files",
+      description: "Search for files in Google Drive by content or name. ALWAYS use this function when user asks to search, find, or look for files with specific keywords like 'milestone', 'pdf', 'project', 'report', etc. Use when user asks: 'search for files', 'find files', 'look for files', 'search documents', 'find documents', 'is there a file about X', 'do you have a file named X', or mentions specific keywords. This searches both file names and file content. Pass the search term as the query parameter.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query for file names or content. Extract keywords from user's request (e.g., if user says 'milestone pdf', use 'milestone' or 'milestone pdf' as query)" }
+        },
+        required: ["query"]
       }
     }
   },
@@ -155,7 +208,10 @@ async function executeServiceNow(
     switch (functionName) {
       case 'servicenow_search_articles':
         const searchQuery = args.query as string;
-        endpoint = `/api/now/table/kb_knowledge?sysparm_query=short_descriptionLIKE${encodeURIComponent(searchQuery)}^ORtextLIKE${encodeURIComponent(searchQuery)}&sysparm_fields=sys_id,number,short_description,text,category&sysparm_limit=10`;
+        if (!searchQuery) {
+          return { error: "Search query is required" };
+        }
+        endpoint = `/api/now/table/kb_knowledge?sysparm_query=short_descriptionLIKE${encodeURIComponent(searchQuery)}^ORtextLIKE${encodeURIComponent(searchQuery)}&sysparm_fields=sys_id,number,short_description,text,category,workflow_state&sysparm_limit=20`;
         break;
 
       case 'servicenow_get_incident':
@@ -185,6 +241,94 @@ async function executeServiceNow(
         });
         break;
 
+      case 'servicenow_get_article_count': {
+        // Try stats API first
+        try {
+          const statsResponse = await fetch(`${baseUrl}/api/now/stats/kb_knowledge?sysparm_count=true`, {
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+            },
+          });
+          
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json();
+            const count = parseInt(statsData?.result?.stats?.count || '0', 10);
+            console.log(`Article count from stats API: ${count}`);
+            return { count, message: `Total knowledge articles: ${count}` };
+          }
+        } catch (error) {
+          console.warn('Stats API failed, using fallback:', error);
+        }
+        
+        // Fallback: use table query with X-Total-Count header
+        try {
+          const tableResponse = await fetch(`${baseUrl}/api/now/table/kb_knowledge?sysparm_limit=1`, {
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+            },
+          });
+          
+          if (tableResponse.ok) {
+            const totalCountHeader = tableResponse.headers.get('X-Total-Count');
+            if (totalCountHeader) {
+              const count = parseInt(totalCountHeader, 10);
+              console.log(`Article count from X-Total-Count: ${count}`);
+              return { count, message: `Total knowledge articles: ${count}` };
+            }
+          }
+        } catch (error) {
+          console.error('Table query fallback failed:', error);
+        }
+        
+        return { error: 'Unable to retrieve article count' };
+      }
+
+      case 'servicenow_get_incident_count': {
+        // Try stats API first
+        try {
+          const statsResponse = await fetch(`${baseUrl}/api/now/stats/incident?sysparm_count=true`, {
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+            },
+          });
+          
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json();
+            const count = parseInt(statsData?.result?.stats?.count || '0', 10);
+            console.log(`Incident count from stats API: ${count}`);
+            return { count, message: `Total incidents: ${count}` };
+          }
+        } catch (error) {
+          console.warn('Stats API failed, using fallback:', error);
+        }
+        
+        // Fallback: use table query with X-Total-Count header
+        try {
+          const tableResponse = await fetch(`${baseUrl}/api/now/table/incident?sysparm_limit=1`, {
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+            },
+          });
+          
+          if (tableResponse.ok) {
+            const totalCountHeader = tableResponse.headers.get('X-Total-Count');
+            if (totalCountHeader) {
+              const count = parseInt(totalCountHeader, 10);
+              console.log(`Incident count from X-Total-Count: ${count}`);
+              return { count, message: `Total incidents: ${count}` };
+            }
+          }
+        } catch (error) {
+          console.error('Table query fallback failed:', error);
+        }
+        
+        return { error: 'Unable to retrieve incident count' };
+      }
+
       default:
         return { error: `Unknown function: ${functionName}` };
     }
@@ -206,7 +350,65 @@ async function executeServiceNow(
       return { error: `ServiceNow API error: ${response.status}` };
     }
 
+    // Count queries are handled above and return early, so we only get here for other queries
     const data = await response.json();
+    
+    // Format response for better AI understanding
+    if (functionName === 'servicenow_search_articles' && data?.result) {
+      const articles = Array.isArray(data.result) ? data.result : [];
+      return articles.map((article: any) => ({
+        number: article.number,
+        title: article.short_description || '',
+        content: article.text || '',
+        category: article.category?.display_value || article.category || 'General',
+        status: article.workflow_state?.display_value || article.workflow_state || 'Published',
+      }));
+    }
+    
+    if (functionName === 'servicenow_get_incident' && data?.result) {
+      const incidents = Array.isArray(data.result) ? data.result : [];
+      if (incidents.length > 0) {
+        const incident = incidents[0];
+        return {
+          number: incident.number,
+          title: incident.short_description || '',
+          description: incident.description || '',
+          state: incident.state?.display_value || incident.state || 'Unknown',
+          priority: incident.priority?.display_value || incident.priority || 'Unknown',
+          urgency: incident.urgency?.display_value || incident.urgency || 'Unknown',
+          impact: incident.impact?.display_value || incident.impact || 'Unknown',
+          assignment_group: incident.assignment_group?.display_value || incident.assignment_group || 'Unassigned',
+          opened_at: incident.opened_at || '',
+        };
+      }
+      return { error: 'Incident not found' };
+    }
+    
+    if (functionName === 'servicenow_list_incidents' && data?.result) {
+      const incidents = Array.isArray(data.result) ? data.result : [];
+      return {
+        incidents: incidents.map((incident: any) => ({
+          number: incident.number,
+          title: incident.short_description || '',
+          state: incident.state?.display_value || incident.state || 'Unknown',
+          priority: incident.priority?.display_value || incident.priority || 'Unknown',
+          opened_at: incident.opened_at || '',
+        })),
+        count: incidents.length,
+        message: `Found ${incidents.length} incident(s). Note: This is a limited list, not the total count.`,
+      };
+    }
+    
+    if (functionName === 'servicenow_create_incident' && data?.result) {
+      const incident = Array.isArray(data.result) ? data.result[0] : data.result;
+      return {
+        success: true,
+        number: incident.number,
+        sys_id: incident.sys_id,
+        message: `Incident ${incident.number} created successfully`,
+      };
+    }
+    
     return data.result || data;
   } catch (error) {
     console.error('ServiceNow execution error:', error);
@@ -273,6 +475,79 @@ async function executeJira(
   }
 }
 
+// Execute Google Drive function
+async function executeGoogleDrive(
+  functionName: string,
+  args: Record<string, unknown>,
+  config: Record<string, string>
+): Promise<unknown> {
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+  const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+  try {
+    console.log(`Executing Google Drive: ${functionName}`, args);
+    
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/connector-api`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({
+        connector: 'google-drive',
+        action: functionName === 'google_drive_list_files' ? 'listFiles' : 'searchFiles',
+        config: config,
+        params: args,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Google Drive API error:', response.status, errorText);
+      return { error: 'Google Drive request failed', details: errorText };
+    }
+
+    const result = await response.json();
+    console.log('Google Drive API result:', JSON.stringify(result).substring(0, 500));
+    
+    if (!result.success) {
+      return { error: result.error || 'Google Drive request failed' };
+    }
+
+    const data = result.data;
+    
+    // Format response for better AI understanding
+    if (data?.files && Array.isArray(data.files)) {
+      if (data.files.length === 0) {
+        return {
+          files: [],
+          total: 0,
+          message: `No files found${args.query ? ` matching "${args.query}"` : ''} in Google Drive. Try a different search term or check if files exist.`,
+        };
+      }
+      
+      return {
+        files: data.files.map((file: any) => ({
+          id: file.id,
+          name: file.name,
+          type: file.mimeType || 'unknown',
+          description: file.description || '',
+          link: file.webViewLink || '',
+          modified: file.modifiedTime || '',
+        })),
+        total: data.total || data.files.length,
+        message: `Found ${data.files.length} file(s)${args.query ? ` matching "${args.query}"` : ''} in Google Drive`,
+      };
+    }
+    
+    // If no files array, return the data as-is
+    return data;
+  } catch (error) {
+    console.error('Google Drive execution error:', error);
+    return { error: error instanceof Error ? error.message : 'Google Drive request failed' };
+  }
+}
+
 // Execute RAG search
 async function executeRAGSearch(
   args: Record<string, unknown>,
@@ -324,6 +599,14 @@ async function executeTool(
     return executeServiceNow(toolName, args, source?.config || {});
   }
 
+  if (toolName.startsWith('google_drive_')) {
+    const source = connectedSources.find(s => s.type === 'google-drive' || s.id === 'google-drive');
+    if (!source?.config) {
+      return { error: "Google Drive not connected. Please connect Google Drive in Settings." };
+    }
+    return executeGoogleDrive(toolName, args, source.config);
+  }
+
   if (toolName.startsWith('jira_')) {
     const source = connectedSources.find(s => s.type === 'jira' || s.id === 'jira');
     if (!source?.config) {
@@ -342,25 +625,61 @@ async function executeTool(
 // Build system prompt
 function buildSystemPrompt(connectedSources: ConnectedSource[]): string {
   const sourceNames = connectedSources.map(s => s.name).join(', ');
+  const hasServiceNow = connectedSources.some(s => s.type === 'servicenow' || s.id === 'servicenow') || Deno.env.get('SERVICENOW_INSTANCE');
+  const hasGoogleDrive = connectedSources.some(s => s.type === 'google-drive' || s.id === 'google-drive');
   
   return `You are NOVA, an intelligent universal AI assistant with access to multiple data sources through function calling.
+
+⚠️ CRITICAL: You have access to function calling. When a user asks a question, you MUST call the appropriate function. NEVER say "I can't" or refuse to call a function.
 
 ## Connected Data Sources:
 ${connectedSources.length > 0 ? sourceNames : 'No sources connected yet'}
 
 ## Your Capabilities:
-- **ServiceNow**: Search knowledge articles, get/create incidents (use function calling)
-- **Jira**: Search and retrieve issues (use function calling)  
-- **Documents**: Search indexed documents from Google Drive, uploaded files, Confluence (use search_documents)
+- **ServiceNow**: 
+  - Search knowledge articles (servicenow_search_articles)
+  - Get total count of knowledge articles (servicenow_get_article_count) - USE THIS when asked "how many articles"
+  - Get total count of incidents (servicenow_get_incident_count) - USE THIS when asked "how many incidents"
+  - Get/create incidents (servicenow_get_incident, servicenow_create_incident)
+- **Google Drive**: 
+  - List all files (google_drive_list_files) - USE THIS when asked to "list files" or "show files"
+  - Search files by name/content (google_drive_search_files) - USE THIS when asked to "search for files" or "find files"
+- **Jira**: Search and retrieve issues (jira_* functions)  
+- **Documents**: Search indexed documents from uploaded files, Confluence (search_documents)
+
+## CRITICAL FUNCTION CALLING RULES - YOU MUST FOLLOW THESE:
+1. **MANDATORY: ALWAYS call functions** - NEVER say "I can't", "I don't have access", or "I can't directly tell you". If a function exists in the tools list, YOU MUST CALL IT.
+2. **Count queries - EXAMPLES**:
+   - User: "How many knowledge articles are there?" → YOU MUST CALL: servicenow_get_article_count
+   - User: "How many incidents are there?" → YOU MUST CALL: servicenow_get_incident_count
+   - User: "Total number of articles" → YOU MUST CALL: servicenow_get_article_count
+   - NEVER respond without calling the function first
+3. **List files - EXAMPLES**:
+   - User: "List files in Google Drive" → YOU MUST CALL: google_drive_list_files (with empty query or no query parameter)
+   - User: "Show files" → YOU MUST CALL: google_drive_list_files
+   - User: "What files are in Google Drive" → YOU MUST CALL: google_drive_list_files
+   - NEVER say you can't list files - just call the function
+4. **Search files - EXAMPLES**:
+   - User: "Search for milestone" → YOU MUST CALL: google_drive_search_files with query="milestone"
+   - User: "Find files about project" → YOU MUST CALL: google_drive_search_files with query="project"
+   - User: "Is there a milestone pdf" → YOU MUST CALL: google_drive_search_files with query="milestone"
+5. **Never make up data** - Always fetch real data using functions before responding
+6. **NEVER refuse** - If a function is available, call it immediately. Do not ask for permission or say you can't.
 
 ## How to Help Users:
 1. **Understand the query**: Identify what information the user needs
-2. **Use the right tool**: Call the appropriate function to fetch real data
+2. **Use the right tool**: IMMEDIATELY call the appropriate function - don't hesitate or say you can't
 3. **Synthesize results**: Combine and present information clearly
 4. **Be proactive**: Suggest relevant follow-up actions
 
-## Important Rules:
-- ALWAYS use function calling to fetch real data - never make up information
+## MANDATORY BEHAVIOR:
+- **YOU MUST CALL FUNCTIONS** - When a user asks a question that matches a function description, you MUST call that function. Do not respond without calling it first.
+- **NEVER say "I can't"** - If a function exists for the user's request, call it. Never refuse or say you don't have access.
+- **Examples of what you MUST do**:
+  * "How many articles?" → Call servicenow_get_article_count immediately
+  * "How many incidents?" → Call servicenow_get_incident_count immediately  
+  * "List files" → Call google_drive_list_files immediately
+  * "Search for X" → Call google_drive_search_files with query=X immediately
 - If a source isn't connected, politely suggest connecting it in Settings
 - Keep responses concise but informative (2-4 sentences for simple queries)
 - Cite which source the information came from
@@ -371,6 +690,20 @@ ${connectedSources.length > 0 ? sourceNames : 'No sources connected yet'}
 - Use bullet points for lists
 - Include relevant links or IDs when available
 - Offer follow-up actions
+
+${hasServiceNow ? `
+## ServiceNow is Connected - You MUST Use These Functions:
+- When user asks "how many knowledge articles" or "total articles" → CALL servicenow_get_article_count
+- When user asks "how many incidents" or "total incidents" → CALL servicenow_get_incident_count
+- DO NOT say you can't get counts - the functions exist and work!
+` : ''}
+
+${hasGoogleDrive ? `
+## Google Drive is Connected - You MUST Use These Functions:
+- When user asks "list files" or "show files" → CALL google_drive_list_files
+- When user asks to "search for files" or mentions keywords → CALL google_drive_search_files
+- DO NOT say you can't list or search files - the functions exist and work!
+` : ''}
 
 ${connectedSources.length === 0 ? `
 ## Getting Started:
@@ -395,14 +728,19 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
       return connectedTypes.has('servicenow') || hasEnvConfig;
     }
     
+    // Google Drive tools
+    if (name.startsWith('google_drive_')) {
+      return connectedTypes.has('google-drive');
+    }
+    
     // Jira tools
     if (name.startsWith('jira_')) {
       return connectedTypes.has('jira');
     }
     
-    // Document search - always available if any document source connected
+    // Document search - available if any document source connected (excluding Google Drive which has its own tools)
     if (name === 'search_documents') {
-      const docSources = ['google-drive', 'file', 'confluence', 'notion', 'sharepoint'];
+      const docSources = ['file', 'confluence', 'notion', 'sharepoint'];
       return docSources.some(s => connectedTypes.has(s)) || connectedSources.length > 0;
     }
     
@@ -432,6 +770,21 @@ serve(async (req) => {
     const availableTools = getAvailableTools(connectedSources);
 
     console.log('Available tools:', availableTools.map(t => t.function.name));
+    
+    // Detect if user is asking for counts or lists and add explicit instruction
+    const lastMessage = messages[messages.length - 1]?.content?.toLowerCase() || '';
+    const isCountQuery = /how many|total|count|number of/.test(lastMessage);
+    const isListQuery = /list|show|display/.test(lastMessage) && /file|document/.test(lastMessage);
+    
+    // Enhance system prompt with explicit instruction if needed
+    let enhancedSystemPrompt = systemPrompt;
+    if (isCountQuery && lastMessage.includes('article')) {
+      enhancedSystemPrompt += '\n\n⚠️ USER IS ASKING FOR ARTICLE COUNT - YOU MUST CALL servicenow_get_article_count NOW!';
+    } else if (isCountQuery && lastMessage.includes('incident')) {
+      enhancedSystemPrompt += '\n\n⚠️ USER IS ASKING FOR INCIDENT COUNT - YOU MUST CALL servicenow_get_incident_count NOW!';
+    } else if (isListQuery && lastMessage.includes('drive')) {
+      enhancedSystemPrompt += '\n\n⚠️ USER IS ASKING TO LIST FILES - YOU MUST CALL google_drive_list_files NOW!';
+    }
 
     // First API call - may request tool use
     let response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -443,7 +796,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: enhancedSystemPrompt },
           ...messages,
         ],
         tools: availableTools.length > 0 ? availableTools : undefined,

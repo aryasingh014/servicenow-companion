@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 interface ServiceNowRequest {
-  action: 'getArticleCount' | 'getIncidentCount' | 'getCatalogItemCount' | 'getArticle' | 'getIncident' | 'createIncident' | 'searchArticles' | 'getCatalogItems';
+  action: 'getArticleCount' | 'getIncidentCount' | 'getCatalogItemCount' | 'getArticle' | 'getIncident' | 'createIncident' | 'searchArticles' | 'getCatalogItems' | 'testKnowledgeArticles';
   params?: Record<string, unknown>;
 }
 
@@ -50,12 +50,14 @@ serve(async (req) => {
 
       case 'getArticle':
         const articleNumber = params?.number as string;
-        endpoint = `/api/now/table/kb_knowledge?sysparm_query=number=${articleNumber}&sysparm_fields=sys_id,number,short_description,text,category,kb_category&sysparm_limit=1`;
+        endpoint = `/api/now/table/kb_knowledge?sysparm_query=number=${articleNumber}^workflow_state=published&sysparm_fields=sys_id,number,short_description,text,category,kb_category&sysparm_limit=1`;
+        console.log(`Fetching article by number: ${articleNumber}, endpoint: ${endpoint}`);
         break;
 
       case 'searchArticles':
         const searchQuery = params?.query as string;
-        endpoint = `/api/now/table/kb_knowledge?sysparm_query=short_descriptionLIKE${encodeURIComponent(searchQuery)}^ORtextLIKE${encodeURIComponent(searchQuery)}&sysparm_fields=sys_id,number,short_description,category&sysparm_limit=10`;
+        endpoint = `/api/now/table/kb_knowledge?sysparm_query=short_descriptionLIKE${encodeURIComponent(searchQuery)}^ORtextLIKE${encodeURIComponent(searchQuery)}^workflow_state=published&sysparm_fields=sys_id,number,short_description,category&sysparm_limit=10`;
+        console.log(`Searching articles with query: "${searchQuery}", encoded endpoint: ${endpoint}`);
         break;
 
       case 'getIncident':
@@ -87,6 +89,81 @@ serve(async (req) => {
       case 'getCatalogItems':
         endpoint = '/api/now/table/sc_cat_item?sysparm_fields=sys_id,name,short_description,category&sysparm_limit=20';
         break;
+
+      case 'testKnowledgeArticles':
+        // Test function to verify knowledge article fetching
+        console.log('🧪 Testing knowledge article fetching...');
+
+        // Test 1: Fetch article by ID
+        const testArticleNumber = 'KB0000001';
+        const articleEndpoint = `/api/now/table/kb_knowledge?sysparm_query=number=${testArticleNumber}^workflow_state=published&sysparm_fields=sys_id,number,short_description,text,category,kb_category&sysparm_limit=1`;
+        console.log(`Testing fetch by ID: ${testArticleNumber}`);
+
+        const articleResponse = await fetch(`${baseUrl}${articleEndpoint}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        });
+
+        let articleResult = null;
+        if (articleResponse.ok) {
+          const articleData = await articleResponse.json();
+          articleResult = articleData.result?.[0] || null;
+          console.log(`✅ Article fetch result: ${articleResult ? 'Found' : 'Not found'}`);
+          if (articleResult) {
+            console.log(`   Number: ${articleResult.number}, Title: ${articleResult.short_description}`);
+          }
+        } else {
+          console.error(`❌ Article fetch failed: ${articleResponse.status}`);
+        }
+
+        // Test 2: Search articles
+        const testQuery = 'password';
+        const searchEndpoint = `/api/now/table/kb_knowledge?sysparm_query=short_descriptionLIKE${encodeURIComponent(testQuery)}^ORtextLIKE${encodeURIComponent(testQuery)}^workflow_state=published&sysparm_fields=sys_id,number,short_description,category&sysparm_limit=10`;
+        console.log(`Testing search query: "${testQuery}"`);
+
+        const searchResponse = await fetch(`${baseUrl}${searchEndpoint}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        });
+
+        let searchResults = [];
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          searchResults = searchData.result || [];
+          console.log(`✅ Search results: ${searchResults.length} articles found`);
+          searchResults.forEach((article: any, index: number) => {
+            console.log(`   ${index + 1}. ${article.number}: ${article.short_description}`);
+          });
+        } else {
+          console.error(`❌ Search failed: ${searchResponse.status}`);
+        }
+
+        // Return test results
+        return new Response(JSON.stringify({
+          success: true,
+          testResults: {
+            articleById: {
+              requested: testArticleNumber,
+              found: !!articleResult,
+              article: articleResult
+            },
+            searchQuery: {
+              query: testQuery,
+              count: searchResults.length,
+              articles: searchResults
+            }
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
 
       default:
         throw new Error(`Unknown action: ${action}`);
