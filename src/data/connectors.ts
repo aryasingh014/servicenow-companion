@@ -31,14 +31,13 @@ export const connectors: Connector[] = [
   {
     id: 'google-drive',
     name: 'Google Drive',
-    description: 'Connect to Google Drive for file storage and sharing',
+    description: 'One-click connect to Google Drive with OAuth',
     icon: '📂',
     category: 'popular',
     isConnected: false,
-    configFields: [
-      { name: 'clientId', label: 'OAuth Client ID', type: 'text', required: true, placeholder: 'Google Cloud OAuth Client ID' },
-      { name: 'clientSecret', label: 'OAuth Client Secret', type: 'password', required: true, placeholder: 'OAuth Client Secret' },
-    ],
+    useOAuth: true,
+    oauthProvider: 'google',
+    configFields: [],
   },
   {
     id: 'jira',
