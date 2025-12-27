@@ -6,6 +6,8 @@ export interface Connector {
   category: 'popular' | 'knowledge' | 'crm' | 'development' | 'communication' | 'storage';
   isConnected: boolean;
   configFields?: ConnectorField[];
+  useOAuth?: boolean;
+  oauthProvider?: 'google' | 'microsoft' | 'github';
 }
 
 export interface ConnectorField {

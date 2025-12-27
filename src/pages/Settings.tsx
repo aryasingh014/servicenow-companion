@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { ConnectorCard } from "@/components/ConnectorCard";
 import { ConnectorConfigDialog } from "@/components/ConnectorConfigDialog";
@@ -9,16 +9,67 @@ import { connectors as defaultConnectors, connectorCategories } from "@/data/con
 import { Connector, ConnectorConfig } from "@/types/connector";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
 
 const STORAGE_KEY = "connected-sources";
 
 export default function Settings() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [connectorList, setConnectorList] = useState<Connector[]>(defaultConnectors);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
+
+  // Handle OAuth callback
+  useEffect(() => {
+    const connectorParam = searchParams.get('connector');
+    
+    if (connectorParam === 'google-drive') {
+      // Check if user is authenticated after OAuth redirect
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.provider_token) {
+          // Successfully authenticated with Google
+          const newConfig: ConnectorConfig = {
+            connectorId: 'google-drive',
+            config: {
+              accessToken: session.provider_token,
+              email: session.user?.email || '',
+            },
+            connectedAt: new Date().toISOString(),
+          };
+
+          // Save to connected configs
+          const saved = localStorage.getItem(STORAGE_KEY);
+          let configs: ConnectorConfig[] = saved ? JSON.parse(saved) : [];
+          const existingIndex = configs.findIndex(c => c.connectorId === 'google-drive');
+          
+          if (existingIndex >= 0) {
+            configs[existingIndex] = newConfig;
+          } else {
+            configs.push(newConfig);
+          }
+
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
+          setConnectedConfigs(configs);
+          
+          // Update connector status
+          setConnectorList((prev) =>
+            prev.map((c) => (c.id === 'google-drive' ? { ...c, isConnected: true } : c))
+          );
+
+          toast({
+            title: "Google Drive Connected! 🎉",
+            description: "You can now ask NOVA about your Google Drive files.",
+          });
+
+          // Clean up URL
+          navigate('/settings', { replace: true });
+        }
+      });
+    }
+  }, [searchParams, navigate]);
 
   // Load connected configs from localStorage
   useEffect(() => {
