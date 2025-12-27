@@ -60,38 +60,26 @@ async function readFileContent(file: globalThis.File): Promise<string> {
   });
 }
 
-// Index documents to RAG service
+// Index documents to the backend RAG service
 async function indexDocuments(
   connectorId: string,
   documents: Array<{ title: string; content: string; sourceId?: string }>
-): Promise<{ success: boolean; results?: unknown[] }> {
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rag-service`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          action: 'index',
-          connectorId,
-          sourceType: 'file',
-          documents,
-        }),
-      }
-    );
+): Promise<{ success: boolean; results?: unknown[]; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('rag-service', {
+    body: {
+      action: 'index',
+      connectorId,
+      sourceType: 'file',
+      documents,
+    },
+  });
 
-    if (!response.ok) {
-      throw new Error(`Indexing failed: ${response.status}`);
-    }
-
-    return response.json();
-  } catch (error) {
+  if (error) {
     console.error('Document indexing error:', error);
-    return { success: false };
+    return { success: false, error: error.message };
   }
+
+  return (data ?? { success: true }) as { success: boolean; results?: unknown[]; error?: string };
 }
 
 export const ConnectorConfigDialog = ({
