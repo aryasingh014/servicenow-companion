@@ -5,3 +5,18 @@ verify_jwt = false
 
 [functions.chat]
 verify_jwt = false
+
+[functions.universal-chat]
+verify_jwt = false
+
+[functions.connector-api]
+verify_jwt = false
+
+[functions.rag-service]
+verify_jwt = false
+
+[functions.feedback]
+verify_jwt = false
+
+[functions.learning]
+verify_jwt = false

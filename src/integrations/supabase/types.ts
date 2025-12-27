@@ -14,13 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      documents: {
+        Row: {
+          connector_id: string
+          content: string
+          content_hash: string | null
+          created_at: string
+          embedding: string | null
+          id: string
+          metadata: Json | null
+          source_id: string | null
+          source_type: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          connector_id: string
+          content: string
+          content_hash?: string | null
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          metadata?: Json | null
+          source_id?: string | null
+          source_type: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          connector_id?: string
+          content?: string
+          content_hash?: string | null
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          metadata?: Json | null
+          source_id?: string | null
+          source_type?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      hybrid_search: {
+        Args: {
+          connector_filter?: string
+          match_count?: number
+          query_embedding: string
+          query_text: string
+        }
+        Returns: {
+          connector_id: string
+          content: string
+          id: string
+          keyword_rank: number
+          metadata: Json
+          similarity: number
+          source_type: string
+          title: string
+        }[]
+      }
+      keyword_search: {
+        Args: {
+          connector_filter?: string
+          match_count?: number
+          query_text: string
+        }
+        Returns: {
+          connector_id: string
+          content: string
+          id: string
+          keyword_rank: number
+          metadata: Json
+          source_type: string
+          title: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
