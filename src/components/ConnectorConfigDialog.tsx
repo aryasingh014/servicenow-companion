@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
-import { Eye, EyeOff, Loader2, Upload, File, X } from "lucide-react";
+import { Eye, EyeOff, Loader2, Upload, File, X, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -33,6 +34,63 @@ interface UploadedFile {
   name: string;
   size: number;
   type: string;
+  content?: string;
+  indexed?: boolean;
+}
+
+// Read file content as text
+async function readFileContent(file: globalThis.File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    
+    // Handle different file types
+    if (file.type.includes('text') || 
+        file.name.endsWith('.txt') || 
+        file.name.endsWith('.md') ||
+        file.name.endsWith('.csv') ||
+        file.name.endsWith('.json')) {
+      reader.readAsText(file);
+    } else {
+      // For binary files, just read as text (may not work perfectly)
+      reader.readAsText(file);
+    }
+  });
+}
+
+// Index documents to RAG service
+async function indexDocuments(
+  connectorId: string,
+  documents: Array<{ title: string; content: string; sourceId?: string }>
+): Promise<{ success: boolean; results?: unknown[] }> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rag-service`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          action: 'index',
+          connectorId,
+          sourceType: 'file',
+          documents,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Indexing failed: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Document indexing error:', error);
+    return { success: false };
+  }
 }
 
 export const ConnectorConfigDialog = ({
@@ -46,22 +104,45 @@ export const ConnectorConfigDialog = ({
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [indexingProgress, setIndexingProgress] = useState(0);
+  const [isIndexing, setIsIndexing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rawFilesRef = useRef<globalThis.File[]>([]);
 
   if (!connector) return null;
 
   const isFileConnector = connector.id === 'file';
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    const newFiles: UploadedFile[] = Array.from(files).map(file => ({
-      name: file.name,
-      size: file.size,
-      type: file.type || 'unknown',
-    }));
+    const newFiles: UploadedFile[] = [];
+    const rawFiles = Array.from(files);
+    
+    for (const file of rawFiles) {
+      try {
+        const content = await readFileContent(file);
+        newFiles.push({
+          name: file.name,
+          size: file.size,
+          type: file.type || 'unknown',
+          content,
+          indexed: false,
+        });
+      } catch (error) {
+        console.error(`Failed to read ${file.name}:`, error);
+        newFiles.push({
+          name: file.name,
+          size: file.size,
+          type: file.type || 'unknown',
+          content: undefined,
+          indexed: false,
+        });
+      }
+    }
 
+    rawFilesRef.current = [...rawFilesRef.current, ...rawFiles];
     setUploadedFiles(prev => [...prev, ...newFiles]);
     
     // Store file names in config
@@ -70,6 +151,7 @@ export const ConnectorConfigDialog = ({
   };
 
   const removeFile = (index: number) => {
+    rawFilesRef.current = rawFilesRef.current.filter((_, i) => i !== index);
     setUploadedFiles(prev => {
       const updated = prev.filter((_, i) => i !== index);
       const fileNames = updated.map(f => f.name).join(', ');
@@ -110,15 +192,75 @@ export const ConnectorConfigDialog = ({
     }
 
     setIsSaving(true);
+
     try {
+      // For file connector, index the documents
+      if (isFileConnector && uploadedFiles.length > 0) {
+        setIsIndexing(true);
+        setIndexingProgress(0);
+
+        const documentsToIndex = uploadedFiles
+          .filter(f => f.content && f.content.length > 0)
+          .map(f => ({
+            title: f.name,
+            content: f.content!,
+            sourceId: f.name,
+          }));
+
+        if (documentsToIndex.length > 0) {
+          toast({
+            title: "Indexing documents...",
+            description: `Processing ${documentsToIndex.length} files for AI search`,
+          });
+
+          // Simulate progress while indexing
+          const progressInterval = setInterval(() => {
+            setIndexingProgress(prev => Math.min(prev + 10, 90));
+          }, 500);
+
+          const result = await indexDocuments(connector.id, documentsToIndex);
+
+          clearInterval(progressInterval);
+          setIndexingProgress(100);
+
+          if (result.success) {
+            toast({
+              title: "Documents indexed! 🎉",
+              description: `${documentsToIndex.length} files are now searchable by NOVA`,
+            });
+
+            // Mark files as indexed
+            setUploadedFiles(prev => 
+              prev.map(f => ({ ...f, indexed: true }))
+            );
+          } else {
+            toast({
+              title: "Indexing partially complete",
+              description: "Some documents may not be searchable. Try re-uploading.",
+              variant: "destructive",
+            });
+          }
+        }
+
+        setIsIndexing(false);
+      }
+
       await onSave(connector.id, config);
       onOpenChange(false);
       setConfig({});
       setUploadedFiles([]);
+      rawFilesRef.current = [];
+      setIndexingProgress(0);
     } catch (error) {
       console.error("Error saving connector config:", error);
+      toast({
+        title: "Connection failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
     } finally {
       setIsSaving(false);
+      setIsIndexing(false);
     }
   };
 
@@ -214,7 +356,7 @@ export const ConnectorConfigDialog = ({
                   Click to upload or drag files here
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  PDF, DOC, TXT, CSV, and more
+                  PDF, DOC, TXT, CSV, MD, JSON supported
                 </p>
                 <input
                   ref={fileInputRef}
@@ -226,6 +368,17 @@ export const ConnectorConfigDialog = ({
                 />
               </div>
 
+              {/* Indexing Progress */}
+              {isIndexing && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Indexing for AI search...</span>
+                    <span className="text-primary">{indexingProgress}%</span>
+                  </div>
+                  <Progress value={indexingProgress} className="h-2" />
+                </div>
+              )}
+
               {/* Uploaded Files List */}
               {uploadedFiles.length > 0 && (
                 <div className="space-y-2">
@@ -236,16 +389,22 @@ export const ConnectorConfigDialog = ({
                         key={index}
                         className="flex items-center gap-2 p-2 rounded-lg bg-secondary/50 border border-border"
                       >
-                        <File className="w-4 h-4 text-primary flex-shrink-0" />
+                        {file.indexed ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                        ) : (
+                          <File className="w-4 h-4 text-primary flex-shrink-0" />
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm truncate">{file.name}</p>
                           <p className="text-xs text-muted-foreground">
                             {formatFileSize(file.size)}
+                            {file.content && ` • ${file.content.length.toLocaleString()} chars`}
                           </p>
                         </div>
                         <button
                           onClick={() => removeFile(index)}
                           className="p-1 hover:bg-destructive/20 rounded transition-colors"
+                          disabled={isSaving}
                         >
                           <X className="w-4 h-4 text-muted-foreground hover:text-destructive" />
                         </button>
@@ -273,19 +432,19 @@ export const ConnectorConfigDialog = ({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? (
+          <Button onClick={handleSave} disabled={isSaving || isIndexing}>
+            {isSaving || isIndexing ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
+                {isIndexing ? "Indexing..." : "Saving..."}
               </>
             ) : connector.isConnected ? (
               "Save Changes"
             ) : (
-              "Connect"
+              "Connect & Index"
             )}
           </Button>
         </DialogFooter>
