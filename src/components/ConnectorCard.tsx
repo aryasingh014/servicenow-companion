@@ -33,8 +33,15 @@ export const ConnectorCard = ({
     
     try {
       const config = getConnectorConfig(connector.id);
-      if (!config) {
-        throw new Error('No configuration found');
+      
+      // For OAuth connectors (google-drive, email, calendar), check for accessToken
+      const oauthConnectors = ['google-drive', 'email', 'calendar'];
+      if (oauthConnectors.includes(connector.id)) {
+        if (!config?.accessToken) {
+          throw new Error('Please reconnect with Google OAuth to get an access token.');
+        }
+      } else if (!config) {
+        throw new Error('No configuration found. Please configure the connector first.');
       }
 
       const { data, error } = await supabase.functions.invoke('connector-api', {
