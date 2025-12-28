@@ -22,10 +22,11 @@ export default function Settings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
 
-  // Handle OAuth callback for Google Drive and Email
+  // Handle OAuth callback for Google Drive, Email, and Calendar
   useEffect(() => {
     const connectorParam = searchParams.get('connector');
-    if (connectorParam !== 'google-drive' && connectorParam !== 'email') return;
+    const validConnectors = ['google-drive', 'email', 'calendar'];
+    if (!connectorParam || !validConnectors.includes(connectorParam)) return;
 
     let cancelled = false;
 
@@ -35,22 +36,20 @@ export default function Settings() {
       const email = session?.user?.email || '';
 
       if (!accessToken) {
+        const displayName = connectorParam === 'email' ? 'Email' : connectorParam === 'calendar' ? 'Calendar' : 'Google Drive';
         toast({
-          title: `${connectorParam === 'email' ? 'Email' : 'Google Drive'} connection incomplete`,
+          title: `${displayName} connection incomplete`,
           description: 'Could not get an access token. Please try connecting again.',
           variant: 'destructive',
         });
         return;
       }
 
-      // Quick verification
-      const connectorType = connectorParam === 'email' ? 'email' : 'google-drive';
-      const actionType = connectorParam === 'email' ? 'testConnection' : 'getFileCount';
-      
+      // Quick verification based on connector type
       const { data: testData, error: testError } = await supabase.functions.invoke('connector-api', {
         body: {
-          connector: connectorType,
-          action: actionType,
+          connector: connectorParam,
+          action: 'testConnection',
           config: { accessToken },
         },
       });
@@ -58,8 +57,9 @@ export default function Settings() {
       const testOk = !testError && (testData as { success?: boolean })?.success === true;
       if (!testOk) {
         const reason = testError?.message || (testData as { error?: string })?.error || 'API request failed';
+        const displayName = connectorParam === 'email' ? 'Email' : connectorParam === 'calendar' ? 'Calendar' : 'Google Drive';
         toast({
-          title: `${connectorParam === 'email' ? 'Email' : 'Google Drive'} connected, but access failed`,
+          title: `${displayName} connected, but access failed`,
           description: `${reason}. If you're seeing a 403 error, you may be signed into a different Google account.`,
           variant: 'destructive',
         });
@@ -69,7 +69,7 @@ export default function Settings() {
       if (cancelled) return;
 
       const newConfig: ConnectorConfig = {
-        connectorId: connectorType,
+        connectorId: connectorParam,
         config: {
           accessToken,
           email,
@@ -80,7 +80,7 @@ export default function Settings() {
       // Save to connected configs
       const saved = localStorage.getItem(STORAGE_KEY);
       let configs: ConnectorConfig[] = saved ? JSON.parse(saved) : [];
-      const existingIndex = configs.findIndex(c => c.connectorId === connectorType);
+      const existingIndex = configs.findIndex(c => c.connectorId === connectorParam);
 
       if (existingIndex >= 0) {
         configs[existingIndex] = newConfig;
@@ -93,17 +93,23 @@ export default function Settings() {
 
       // Update connector status
       setConnectorList((prev) =>
-        prev.map((c) => (c.id === connectorType ? { ...c, isConnected: true } : c))
+        prev.map((c) => (c.id === connectorParam ? { ...c, isConnected: true } : c))
       );
 
-      const displayName = connectorParam === 'email' ? 'Email (Gmail)' : 'Google Drive';
-      const description = connectorParam === 'email' 
-        ? `Connected as ${email}. You can now index your emails for AI search.`
-        : `Connected as ${email}. You can now ask NOVA to search your Drive files.`;
+      const displayNames: Record<string, string> = {
+        'email': 'Email (Gmail)',
+        'calendar': 'Google Calendar',
+        'google-drive': 'Google Drive',
+      };
+      const descriptions: Record<string, string> = {
+        'email': `Connected as ${email}. You can now index your emails for AI search.`,
+        'calendar': `Connected as ${email}. You can now search your calendar events.`,
+        'google-drive': `Connected as ${email}. You can now ask NOVA to search your Drive files.`,
+      };
 
       toast({
-        title: `${displayName} connected`,
-        description,
+        title: `${displayNames[connectorParam]} connected`,
+        description: descriptions[connectorParam],
       });
 
       // Clean up URL

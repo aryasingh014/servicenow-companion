@@ -1,29 +1,5 @@
 import React from 'react';
 
-// Confluence
-export const ConfluenceIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M1.938 18.534c-.246.404-.508.86-.737 1.232a.573.573 0 00.2.784l4.036 2.456a.578.578 0 00.79-.186c.2-.34.462-.798.746-1.296 1.924-3.358 3.874-2.944 7.352-1.264l4.036 1.948a.574.574 0 00.766-.268l1.802-4.104a.574.574 0 00-.264-.754c-1.104-.528-3.294-1.578-5.356-2.57-5.768-2.772-10.638-2.53-13.37 4.022z"
-      fill="#1868DB"
-    />
-    <path
-      d="M22.062 5.466c.246-.404.508-.86.738-1.232a.573.573 0 00-.2-.784L18.564.994a.578.578 0 00-.79.186c-.2.34-.462.798-.746 1.296-1.924 3.358-3.874 2.944-7.352 1.264L5.64 1.792a.574.574 0 00-.766.268L3.072 6.164a.574.574 0 00.264.754c1.104.528 3.294 1.578 5.356 2.57 5.768 2.772 10.638 2.53 13.37-4.022z"
-      fill="#1868DB"
-    />
-  </svg>
-);
-
-// SharePoint
-export const SharePointIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="10" cy="10" r="10" fill="#038387" />
-    <circle cx="16" cy="12" r="7" fill="#1A9BA1" />
-    <circle cx="12" cy="17" r="5" fill="#37C2D8" />
-    <path d="M6 8h8v2H6zM6 12h6v2H6zM10 16h4v2h-4z" fill="white" />
-  </svg>
-);
-
 // Google Drive
 export const GoogleDriveIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -50,62 +26,12 @@ export const JiraIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   </svg>
 );
 
-// Zendesk
-export const ZendeskIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M11 2v14L2 22V8l9-6z" fill="#03363D" />
-    <path d="M11 2L2 8h9V2z" fill="#03363D" />
-    <path d="M13 22V8l9-6v14l-9 6z" fill="#03363D" />
-    <path d="M13 22l9-6h-9v6z" fill="#03363D" />
-  </svg>
-);
-
 // ServiceNow
 export const ServiceNowIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <circle cx="12" cy="12" r="10" fill="#81B5A1" />
     <circle cx="12" cy="12" r="5" fill="white" />
     <circle cx="12" cy="12" r="2.5" fill="#81B5A1" />
-  </svg>
-);
-
-// Slack
-export const SlackIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M5.5 14.5a2 2 0 100-4 2 2 0 000 4zm4-2h4v-4a2 2 0 10-4 0v4z" fill="#E01E5A" />
-    <path d="M9.5 5.5a2 2 0 104 0 2 2 0 00-4 0zm2 4v4h4a2 2 0 100-4h-4z" fill="#36C5F0" />
-    <path d="M18.5 9.5a2 2 0 100 4 2 2 0 000-4zm-4 2h-4v4a2 2 0 104 0v-4z" fill="#2EB67D" />
-    <path d="M14.5 18.5a2 2 0 10-4 0 2 2 0 004 0zm-2-4v-4h-4a2 2 0 100 4h4z" fill="#ECB22E" />
-  </svg>
-);
-
-// Salesforce
-export const SalesforceIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M10.2 5.4a4.2 4.2 0 013.2-1.4 4.4 4.4 0 014.4 4.4 4.4 4.4 0 01-.2 1.2 3.4 3.4 0 012.4 3.2 3.4 3.4 0 01-3.4 3.4H8a4 4 0 01-4-4 4 4 0 012.8-3.8 4.8 4.8 0 013.4-3z"
-      fill="#00A1E0"
-    />
-  </svg>
-);
-
-// HubSpot
-export const HubSpotIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path
-      d="M17 8.5V6.5a1.5 1.5 0 00-1.5-1.5h0a1.5 1.5 0 00-1.5 1.5v2a4.5 4.5 0 102.5 8l2-2a1 1 0 00-1.4-1.4l-2 2A2.5 2.5 0 1117 10.5v-2z"
-      fill="#FF7A59"
-    />
-    <circle cx="8" cy="8" r="2" fill="#FF7A59" />
-    <path d="M8 10v4" stroke="#FF7A59" strokeWidth="2" />
-  </svg>
-);
-
-// Gong
-export const GongIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="12" r="10" fill="#6B52AE" />
-    <path d="M8 9v6M12 7v10M16 9v6" stroke="white" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 
@@ -143,7 +69,7 @@ export const FileIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   </svg>
 );
 
-// Email
+// Email (Gmail style)
 export const EmailIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect x="2" y="4" width="20" height="16" rx="2" fill="#EA4335" />
@@ -164,51 +90,52 @@ export const NotionIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
   </svg>
 );
 
-// BookStack
-export const BookStackIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+// Calendar (Google Calendar style)
+export const CalendarIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M4 19V5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2z" fill="#0288D1" />
-    <path d="M8 7h8M8 11h8M8 15h6" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+    <rect x="3" y="4" width="18" height="18" rx="2" fill="#4285F4" />
+    <rect x="3" y="4" width="18" height="4" fill="#1A73E8" />
+    <path d="M7 2v4M17 2v4" stroke="#4285F4" strokeWidth="2" strokeLinecap="round" />
+    <text x="12" y="16" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">31</text>
   </svg>
 );
 
-// Document360
-export const Document360Icon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+// Browser History
+export const BrowserHistoryIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="12" r="10" fill="#7C3AED" />
-    <path d="M8 9h8M8 12h8M8 15h5" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+    <circle cx="12" cy="12" r="10" stroke="#8B5CF6" strokeWidth="2" fill="white" />
+    <path d="M12 6v6l4 2" stroke="#8B5CF6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4 12H2M22 12h-2M12 2v2M12 20v2" stroke="#8B5CF6" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 
-// Discourse
-export const DiscourseIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+// WhatsApp
+export const WhatsAppIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="12" r="10" fill="#000" />
     <path
-      d="M12 6c-3.3 0-6 2.4-6 5.4 0 1.3.5 2.5 1.3 3.4L6 18l3.7-1.3c.7.2 1.5.3 2.3.3 3.3 0 6-2.4 6-5.4S15.3 6 12 6z"
-      fill="#FFF9AE"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"
+      fill="#25D366"
+    />
+    <path
+      d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"
+      fill="white"
     />
   </svg>
 );
 
 // Connector icon map
 export const connectorIcons: Record<string, React.FC<{ className?: string }>> = {
-  confluence: ConfluenceIcon,
-  sharepoint: SharePointIcon,
   'google-drive': GoogleDriveIcon,
   jira: JiraIcon,
-  zendesk: ZendeskIcon,
   servicenow: ServiceNowIcon,
-  slack: SlackIcon,
-  salesforce: SalesforceIcon,
-  hubspot: HubSpotIcon,
-  gong: GongIcon,
   github: GitHubIcon,
   web: WebIcon,
   file: FileIcon,
   email: EmailIcon,
   notion: NotionIcon,
-  bookstack: BookStackIcon,
-  document360: Document360Icon,
-  discourse: DiscourseIcon,
+  calendar: CalendarIcon,
+  'browser-history': BrowserHistoryIcon,
+  whatsapp: WhatsAppIcon,
 };

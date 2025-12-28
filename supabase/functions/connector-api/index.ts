@@ -938,6 +938,44 @@ async function callServiceNow(config: Record<string, string>, action: string, pa
   return data;
 }
 
+// Demo/mock connectors for connectors that need local setup
+async function callDemoConnector(connector: string, action: string, _config: Record<string, string>): Promise<unknown> {
+  switch (action) {
+    case 'testConnection':
+      // Simulate fast connection test
+      return { success: true, message: `${connector} connector ready (demo mode)` };
+    default:
+      return { success: true, message: `${connector} action "${action}" executed (demo mode)` };
+  }
+}
+
+// Calendar (Google Calendar) API helper
+async function callCalendar(config: Record<string, string>, action: string, _params?: Record<string, unknown>): Promise<unknown> {
+  const { accessToken } = config;
+  
+  if (!accessToken) {
+    throw new Error('Google Calendar access token not configured. Please connect with OAuth.');
+  }
+
+  switch (action) {
+    case 'testConnection': {
+      const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1', {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('Authentication expired. Please reconnect.');
+        if (response.status === 403) throw new Error('Access denied. Check Calendar permissions.');
+        throw new Error(`Connection failed: ${response.status}`);
+      }
+      
+      return { success: true, message: 'Google Calendar connection is working' };
+    }
+    default:
+      throw new Error(`Unknown Calendar action: ${action}`);
+  }
+}
+
 // Main router function
 async function routeConnectorRequest(request: ConnectorRequest): Promise<unknown> {
   const { connector, action, config, params } = request;
@@ -949,18 +987,22 @@ async function routeConnectorRequest(request: ConnectorRequest): Promise<unknown
       return callGoogleDrive(config, action, params);
     case 'email':
       return callGmail(config, action, params);
-    case 'confluence':
-      return callConfluence(config, action, params);
+    case 'calendar':
+      return callCalendar(config, action, params);
     case 'jira':
       return callJira(config, action, params);
     case 'notion':
       return callNotion(config, action, params);
     case 'github':
       return callGitHub(config, action, params);
-    case 'slack':
-      return callSlack(config, action, params);
     case 'servicenow':
       return callServiceNow(config, action, params);
+    // Demo connectors - fast mock responses
+    case 'web':
+    case 'file':
+    case 'browser-history':
+    case 'whatsapp':
+      return callDemoConnector(connector, action, config);
     default:
       throw new Error(`Unsupported connector: ${connector}`);
   }

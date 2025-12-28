@@ -109,13 +109,18 @@ export const ConnectorConfigDialog = ({
     setIsSaving(true);
     try {
       // Determine scopes based on connector type
-      const scopes = connector.id === 'email' 
-        ? 'https://www.googleapis.com/auth/gmail.readonly'
-        : 'https://www.googleapis.com/auth/drive.readonly';
+      let scopes = 'https://www.googleapis.com/auth/drive.readonly';
+      let redirectConnector = 'google-drive';
       
-      const redirectConnector = connector.id === 'email' ? 'email' : 'google-drive';
+      if (connector.id === 'email') {
+        scopes = 'https://www.googleapis.com/auth/gmail.readonly';
+        redirectConnector = 'email';
+      } else if (connector.id === 'calendar') {
+        scopes = 'https://www.googleapis.com/auth/calendar.readonly';
+        redirectConnector = 'calendar';
+      }
       
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           scopes,
