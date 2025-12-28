@@ -125,6 +125,12 @@ export const ConnectorConfigDialog = ({
         options: {
           scopes,
           redirectTo: `${window.location.origin}/settings?connector=${redirectConnector}`,
+          // Force Google to re-show the consent screen so newly requested scopes actually apply.
+          queryParams: {
+            prompt: 'consent',
+            access_type: 'offline',
+            include_granted_scopes: 'true',
+          },
         },
       });
 

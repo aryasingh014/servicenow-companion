@@ -12,6 +12,37 @@ interface ConnectorRequest {
   params?: Record<string, unknown>;
 }
 
+// Google OAuth tokeninfo helper
+async function getGoogleTokenScopes(accessToken: string): Promise<string[]> {
+  try {
+    const resp = await fetch(
+      `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const scopeStr = typeof data?.scope === 'string' ? data.scope : '';
+    return scopeStr.split(' ').map((s: string) => s.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function assertGoogleScopes(
+  accessToken: string,
+  requiredScopes: string[],
+  displayName: string
+): Promise<void> {
+  const scopes = await getGoogleTokenScopes(accessToken);
+  if (scopes.length === 0) return; // tokeninfo may be blocked; don't hard-fail
+
+  const missing = requiredScopes.filter((s) => !scopes.includes(s));
+  if (missing.length > 0) {
+    throw new Error(
+      `${displayName} permission missing. Please disconnect and reconnect, then click “Allow” on the Google consent screen.`
+    );
+  }
+}
+
 // Google Drive API helper
 async function callGoogleDrive(config: Record<string, string>, action: string, params?: Record<string, unknown>): Promise<unknown> {
   const { accessToken } = config;
@@ -19,6 +50,8 @@ async function callGoogleDrive(config: Record<string, string>, action: string, p
   if (!accessToken) {
     throw new Error('Google Drive access token not configured. Please reconnect Google Drive with OAuth.');
   }
+
+  await assertGoogleScopes(accessToken, ['https://www.googleapis.com/auth/drive.readonly'], 'Google Drive');
 
   const baseUrl = 'https://www.googleapis.com/drive/v3';
   
@@ -287,6 +320,8 @@ async function callGmail(config: Record<string, string>, action: string, params?
   if (!accessToken) {
     throw new Error('Gmail access token not configured. Please reconnect Email with OAuth.');
   }
+
+  await assertGoogleScopes(accessToken, ['https://www.googleapis.com/auth/gmail.readonly'], 'Gmail');
 
   const baseUrl = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
