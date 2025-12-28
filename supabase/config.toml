@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.learning]
 verify_jwt = false
+
+[functions.email-connector]
+verify_jwt = false
