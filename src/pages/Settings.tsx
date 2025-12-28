@@ -25,50 +25,86 @@ export default function Settings() {
   // Handle OAuth callback
   useEffect(() => {
     const connectorParam = searchParams.get('connector');
-    
-    if (connectorParam === 'google-drive') {
-      // Check if user is authenticated after OAuth redirect
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.provider_token) {
-          // Successfully authenticated with Google
-          const newConfig: ConnectorConfig = {
-            connectorId: 'google-drive',
-            config: {
-              accessToken: session.provider_token,
-              email: session.user?.email || '',
-            },
-            connectedAt: new Date().toISOString(),
-          };
+    if (connectorParam !== 'google-drive') return;
 
-          // Save to connected configs
-          const saved = localStorage.getItem(STORAGE_KEY);
-          let configs: ConnectorConfig[] = saved ? JSON.parse(saved) : [];
-          const existingIndex = configs.findIndex(c => c.connectorId === 'google-drive');
-          
-          if (existingIndex >= 0) {
-            configs[existingIndex] = newConfig;
-          } else {
-            configs.push(newConfig);
-          }
+    let cancelled = false;
 
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
-          setConnectedConfigs(configs);
-          
-          // Update connector status
-          setConnectorList((prev) =>
-            prev.map((c) => (c.id === 'google-drive' ? { ...c, isConnected: true } : c))
-          );
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.provider_token;
+      const email = session?.user?.email || '';
 
-          toast({
-            title: "Google Drive Connected! 🎉",
-            description: "You can now ask NOVA about your Google Drive files.",
-          });
+      if (!accessToken) {
+        toast({
+          title: 'Google Drive connection incomplete',
+          description: 'I couldn\'t get an access token back from Google. Please try connecting again.',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-          // Clean up URL
-          navigate('/settings', { replace: true });
-        }
+      // Quick verification (so we don't show "Connected" if Drive API is actually denying access)
+      const { data: testData, error: testError } = await supabase.functions.invoke('connector-api', {
+        body: {
+          connector: 'google-drive',
+          action: 'getFileCount',
+          config: { accessToken },
+        },
       });
-    }
+
+      const testOk = !testError && (testData as any)?.success === true;
+      if (!testOk) {
+        const reason = testError?.message || (testData as any)?.error || 'Drive API request failed';
+        toast({
+          title: 'Google Drive connected, but access failed',
+          description: `${reason}. If you\'re seeing Google\'s 403 page, you\'re probably signed into a different Google account in your browser than the one you connected here.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (cancelled) return;
+
+      const newConfig: ConnectorConfig = {
+        connectorId: 'google-drive',
+        config: {
+          accessToken,
+          email,
+        },
+        connectedAt: new Date().toISOString(),
+      };
+
+      // Save to connected configs
+      const saved = localStorage.getItem(STORAGE_KEY);
+      let configs: ConnectorConfig[] = saved ? JSON.parse(saved) : [];
+      const existingIndex = configs.findIndex(c => c.connectorId === 'google-drive');
+
+      if (existingIndex >= 0) {
+        configs[existingIndex] = newConfig;
+      } else {
+        configs.push(newConfig);
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
+      setConnectedConfigs(configs);
+
+      // Update connector status
+      setConnectorList((prev) =>
+        prev.map((c) => (c.id === 'google-drive' ? { ...c, isConnected: true } : c))
+      );
+
+      toast({
+        title: 'Google Drive connected',
+        description: email ? `Connected as ${email}. You can now ask NOVA to list or search your Drive files.` : 'You can now ask NOVA to list or search your Drive files.',
+      });
+
+      // Clean up URL
+      navigate('/settings', { replace: true });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, navigate]);
 
   // Load connected configs from localStorage

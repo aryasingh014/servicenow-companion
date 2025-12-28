@@ -25,116 +25,160 @@ async function callGoogleDrive(config: Record<string, string>, action: string, p
   try {
     switch (action) {
       case 'listFiles': {
-        const query = params?.query as string || '';
-        const searchQuery = query ? `&q=name contains '${encodeURIComponent(query)}'` : '';
-        const response = await fetch(`${baseUrl}/files?pageSize=20${searchQuery}&fields=files(id,name,mimeType,description,webViewLink,modifiedTime)`, {
+        const queryText = typeof params?.query === 'string' ? (params?.query as string) : '';
+        const escaped = queryText.replace(/\\/g, '\\\\').replace(/'/g, "\\'").trim();
+        const q = escaped ? `name contains '${escaped}'` : undefined;
+
+        const url = new URL(`${baseUrl}/files`);
+        url.searchParams.set('pageSize', '20');
+        if (q) url.searchParams.set('q', q);
+        url.searchParams.set('fields', 'files(id,name,mimeType,description,webViewLink,modifiedTime)');
+
+        const response = await fetch(url.toString(), {
           headers: { 'Authorization': `Bearer ${accessToken}` },
         });
-        
+
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`Google Drive listFiles error: ${response.status}`, errorText);
+
+          if (response.status === 401) {
+            throw new Error('Google Drive authentication expired. Please reconnect Google Drive.');
+          }
+          if (response.status === 403) {
+            throw new Error('Google Drive access denied (403). You may not have Drive permissions, or you connected the wrong Google account.');
+          }
+
           throw new Error(`Google Drive error: ${response.status} - ${errorText.substring(0, 200)}`);
         }
-        
+
         const data = await response.json();
         return {
           files: data.files || [],
           total: data.files?.length || 0,
         };
       }
-      
+
       case 'getFileCount': {
-        const countResponse = await fetch(`${baseUrl}/files?pageSize=1&fields=files(id)`, {
+        const url = new URL(`${baseUrl}/files`);
+        url.searchParams.set('pageSize', '1');
+        url.searchParams.set('fields', 'files(id)');
+
+        const countResponse = await fetch(url.toString(), {
           headers: { 'Authorization': `Bearer ${accessToken}` },
         });
-        
+
         if (!countResponse.ok) {
           const errorText = await countResponse.text();
           console.error(`Google Drive getFileCount error: ${countResponse.status}`, errorText);
-          throw new Error(`Google Drive error: ${countResponse.status}`);
+
+          if (countResponse.status === 401) {
+            throw new Error('Google Drive authentication expired. Please reconnect Google Drive.');
+          }
+          if (countResponse.status === 403) {
+            throw new Error('Google Drive access denied (403). Please check Drive permissions for the connected Google account.');
+          }
+
+          throw new Error(`Google Drive error: ${countResponse.status} - ${errorText.substring(0, 200)}`);
         }
-        
+
         // Note: Google Drive doesn't provide exact count easily, this is approximate
         return { count: 'many', message: 'Google Drive does not provide exact file counts' };
       }
-      
-    case 'searchFiles': {
-      const searchTerm = params?.query as string || '';
-      if (!searchTerm) {
-        return { files: [], total: 0, message: 'No search query provided' };
-      }
-      
-      console.log(`Google Drive search: "${searchTerm}"`);
-      
-      // Try multiple search strategies
-      const searchQueries = [
-        `fullText contains '${searchTerm}'`,  // Full text search
-        `name contains '${searchTerm}'`,        // Name search
-        `name contains '${searchTerm}' or fullText contains '${searchTerm}'`, // Combined
-      ];
-      
-      let allFiles: any[] = [];
-      const seenIds = new Set<string>();
-      
-      for (const query of searchQueries) {
-        try {
-          const searchResp = await fetch(`${baseUrl}/files?q=${encodeURIComponent(query)}&pageSize=50&fields=files(id,name,mimeType,description,webViewLink,modifiedTime)`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          
-          if (searchResp.ok) {
-            const searchData = await searchResp.json();
-            if (searchData.files && Array.isArray(searchData.files)) {
-              // Deduplicate by file ID
-              for (const file of searchData.files) {
-                if (!seenIds.has(file.id)) {
-                  seenIds.add(file.id);
-                  allFiles.push(file);
+
+      case 'searchFiles': {
+        const searchTermRaw = typeof params?.query === 'string' ? (params?.query as string) : '';
+        const searchTerm = searchTermRaw.trim();
+        if (!searchTerm) {
+          return { files: [], total: 0, message: 'No search query provided' };
+        }
+
+        const escaped = searchTerm.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+        console.log(`Google Drive search: "${searchTerm}"`);
+
+        // Try multiple search strategies
+        const searchQueries = [
+          `fullText contains '${escaped}'`,
+          `name contains '${escaped}'`,
+          `name contains '${escaped}' or fullText contains '${escaped}'`,
+        ];
+
+        let allFiles: any[] = [];
+        const seenIds = new Set<string>();
+
+        for (const query of searchQueries) {
+          try {
+            const url = new URL(`${baseUrl}/files`);
+            url.searchParams.set('q', query);
+            url.searchParams.set('pageSize', '50');
+            url.searchParams.set('fields', 'files(id,name,mimeType,description,webViewLink,modifiedTime)');
+
+            const searchResp = await fetch(url.toString(), {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+
+            if (searchResp.ok) {
+              const searchData = await searchResp.json();
+              if (searchData.files && Array.isArray(searchData.files)) {
+                // Deduplicate by file ID
+                for (const file of searchData.files) {
+                  if (!seenIds.has(file.id)) {
+                    seenIds.add(file.id);
+                    allFiles.push(file);
+                  }
                 }
               }
+              // If we got results, break early
+              if (allFiles.length > 0) break;
+            } else if (searchResp.status === 401) {
+              throw new Error('Google Drive authentication expired. Please reconnect Google Drive.');
+            } else if (searchResp.status === 403) {
+              throw new Error('Google Drive access denied (403). Please check Drive permissions or reconnect with the correct account.');
             }
-            // If we got results, break early
-            if (allFiles.length > 0) break;
-          } else if (searchResp.status === 401) {
-            throw new Error('Google Drive authentication failed. Please reconnect Google Drive.');
-          } else if (searchResp.status === 403) {
-            throw new Error('Google Drive access denied. Please check permissions.');
-          }
-        } catch (error) {
-          if (error instanceof Error && (error.message.includes('authentication') || error.message.includes('access denied'))) {
-            throw error;
-          }
-          console.warn(`Search query "${query}" failed:`, error);
-        }
-      }
-      
-      // If no results from fullText, try name-only search
-      if (allFiles.length === 0) {
-        try {
-          const nameSearchResp = await fetch(`${baseUrl}/files?q=name contains '${encodeURIComponent(searchTerm)}'&pageSize=50&fields=files(id,name,mimeType,description,webViewLink,modifiedTime)`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          });
-          
-          if (nameSearchResp.ok) {
-            const nameSearchData = await nameSearchResp.json();
-            if (nameSearchData.files && Array.isArray(nameSearchData.files)) {
-              allFiles = nameSearchData.files;
+          } catch (error) {
+            if (error instanceof Error && (error.message.includes('expired') || error.message.includes('access denied'))) {
+              throw error;
             }
+            console.warn(`Search query "${query}" failed:`, error);
           }
-        } catch (error) {
-          console.warn('Name-only search failed:', error);
         }
+
+        // If no results from fullText, try name-only search
+        if (allFiles.length === 0) {
+          try {
+            const url = new URL(`${baseUrl}/files`);
+            url.searchParams.set('q', `name contains '${escaped}'`);
+            url.searchParams.set('pageSize', '50');
+            url.searchParams.set('fields', 'files(id,name,mimeType,description,webViewLink,modifiedTime)');
+
+            const nameSearchResp = await fetch(url.toString(), {
+              headers: { 'Authorization': `Bearer ${accessToken}` },
+            });
+
+            if (nameSearchResp.ok) {
+              const nameSearchData = await nameSearchResp.json();
+              if (nameSearchData.files && Array.isArray(nameSearchData.files)) {
+                allFiles = nameSearchData.files;
+              }
+            } else if (nameSearchResp.status === 401) {
+              throw new Error('Google Drive authentication expired. Please reconnect Google Drive.');
+            } else if (nameSearchResp.status === 403) {
+              throw new Error('Google Drive access denied (403). Please check Drive permissions or reconnect with the correct account.');
+            }
+          } catch (error) {
+            console.warn('Name-only search failed:', error);
+          }
+        }
+
+        console.log(`Google Drive search found ${allFiles.length} files`);
+
+        return {
+          files: allFiles,
+          total: allFiles.length,
+          query: searchTerm,
+        };
       }
-      
-      console.log(`Google Drive search found ${allFiles.length} files`);
-      
-      return {
-        files: allFiles,
-        total: allFiles.length,
-        query: searchTerm,
-      };
-    }
       
       default:
         throw new Error(`Unknown Google Drive action: ${action}`);
