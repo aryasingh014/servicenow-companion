@@ -163,6 +163,31 @@ export const connectors: Connector[] = [
     isConnected: false,
     configFields: [],
   },
+  {
+    id: 'email',
+    name: 'Email',
+    description: 'Connect an email inbox (setup required)',
+    icon: '✉️',
+    category: 'popular',
+    isConnected: false,
+    configFields: [
+      {
+        name: 'provider',
+        label: 'Provider',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'imap', label: 'IMAP (generic)' },
+          { value: 'gmail', label: 'Gmail' },
+          { value: 'outlook', label: 'Outlook / Microsoft 365' },
+        ],
+      },
+      { name: 'email', label: 'Email', type: 'text', required: true, placeholder: 'you@company.com' },
+      { name: 'imapHost', label: 'IMAP host', type: 'text', required: false, placeholder: 'imap.yourmail.com' },
+      { name: 'imapPort', label: 'IMAP port', type: 'text', required: false, placeholder: '993' },
+      { name: 'password', label: 'Password / App Password', type: 'password', required: false, placeholder: 'Use an app password if required' },
+    ],
+  },
   // Knowledge Base & Wikis
   {
     id: 'notion',

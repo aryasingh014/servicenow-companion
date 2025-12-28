@@ -59,6 +59,7 @@ function getConnectorDisplayName(connectorId: string): string {
     'github': 'GitHub',
     'web': 'Web Pages',
     'file': 'Files',
+    'email': 'Email',
     'notion': 'Notion',
     'bookstack': 'BookStack',
     'document360': 'Document360',
