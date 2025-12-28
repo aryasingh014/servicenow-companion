@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Settings, Unplug } from "lucide-react";
+import { Check, Settings, Unplug, RefreshCw, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Connector } from "@/types/connector";
 import { connectorIcons } from "@/components/ConnectorIcons";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { getConnectorConfig } from "@/services/connectorService";
 
 interface ConnectorCardProps {
   connector: Connector;
@@ -17,7 +21,51 @@ export const ConnectorCard = ({
   onDisconnect,
   onConfigure,
 }: ConnectorCardProps) => {
+  const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const { toast } = useToast();
   const IconComponent = connectorIcons[connector.id];
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestStatus('idle');
+    
+    try {
+      const config = getConnectorConfig(connector.id);
+      if (!config) {
+        throw new Error('No configuration found');
+      }
+
+      const { data, error } = await supabase.functions.invoke('connector-api', {
+        body: {
+          connector: connector.id,
+          action: 'testConnection',
+          config,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setTestStatus('success');
+      toast({
+        title: "Connection successful",
+        description: `${connector.name} is working correctly.`,
+      });
+    } catch (err: unknown) {
+      setTestStatus('error');
+      const message = err instanceof Error ? err.message : 'Connection test failed';
+      toast({
+        title: "Connection failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsTesting(false);
+      // Reset status after 3 seconds
+      setTimeout(() => setTestStatus('idle'), 3000);
+    }
+  };
 
   return (
     <motion.div
@@ -57,25 +105,45 @@ export const ConnectorCard = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mt-4">
+      <div className="flex flex-col gap-2 mt-4">
         {connector.isConnected ? (
           <>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => onConfigure(connector)}
+              >
+                <Settings className="w-4 h-4 mr-1" />
+                Configure
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => onDisconnect(connector.id)}
+              >
+                <Unplug className="w-4 h-4" />
+              </Button>
+            </div>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
-              className="flex-1"
-              onClick={() => onConfigure(connector)}
+              className="w-full"
+              onClick={handleTestConnection}
+              disabled={isTesting}
             >
-              <Settings className="w-4 h-4 mr-1" />
-              Configure
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => onDisconnect(connector.id)}
-            >
-              <Unplug className="w-4 h-4" />
+              {isTesting ? (
+                <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
+              ) : testStatus === 'success' ? (
+                <CheckCircle className="w-4 h-4 mr-1 text-green-500" />
+              ) : testStatus === 'error' ? (
+                <XCircle className="w-4 h-4 mr-1 text-destructive" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-1" />
+              )}
+              {isTesting ? 'Testing...' : testStatus === 'success' ? 'Connected!' : testStatus === 'error' ? 'Failed' : 'Test Connection'}
             </Button>
           </>
         ) : (
