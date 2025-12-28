@@ -938,6 +938,96 @@ async function callServiceNow(config: Record<string, string>, action: string, pa
   return data;
 }
 
+// WhatsApp Business API helper
+async function callWhatsApp(config: Record<string, string>, action: string, params?: Record<string, unknown>): Promise<unknown> {
+  const { accessToken, phoneNumberId, businessAccountId } = config;
+  
+  if (!accessToken || !phoneNumberId) {
+    throw new Error('WhatsApp Business API requires access token and phone number ID. Get these from Meta Business Suite.');
+  }
+
+  const baseUrl = 'https://graph.facebook.com/v18.0';
+  
+  switch (action) {
+    case 'testConnection': {
+      // Test by fetching phone number info
+      const response = await fetch(`${baseUrl}/${phoneNumberId}`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) throw new Error('Invalid access token. Please check your WhatsApp Business API token.');
+        if (response.status === 400) throw new Error('Invalid phone number ID. Please verify in Meta Business Suite.');
+        throw new Error(`WhatsApp API error: ${errorData?.error?.message || response.status}`);
+      }
+      
+      const data = await response.json();
+      return { 
+        success: true, 
+        message: `WhatsApp Business connected: ${data.display_phone_number || 'Phone verified'}`,
+        phoneNumber: data.display_phone_number,
+        verifiedName: data.verified_name
+      };
+    }
+
+    case 'getMessages': {
+      // Note: WhatsApp Cloud API doesn't provide message history directly
+      // Messages are received via webhooks. This fetches conversation analytics.
+      if (!businessAccountId) {
+        return { 
+          messages: [],
+          note: 'Message history requires webhook setup. WhatsApp Cloud API delivers messages in real-time via webhooks.'
+        };
+      }
+      
+      const response = await fetch(
+        `${baseUrl}/${businessAccountId}/conversations?fields=id,name,messages_count`,
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch conversations');
+      }
+      
+      const data = await response.json();
+      return { conversations: data.data || [], total: data.data?.length || 0 };
+    }
+
+    case 'sendMessage': {
+      const { to, message } = params || {};
+      if (!to || !message) {
+        throw new Error('Recipient (to) and message are required');
+      }
+      
+      const response = await fetch(`${baseUrl}/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          type: 'text',
+          text: { body: message }
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Failed to send message: ${errorData?.error?.message || response.status}`);
+      }
+      
+      const data = await response.json();
+      return { success: true, messageId: data.messages?.[0]?.id };
+    }
+
+    default:
+      throw new Error(`Unknown WhatsApp action: ${action}`);
+  }
+}
+
 // Demo/mock connectors for connectors that need local setup
 async function callDemoConnector(connector: string, action: string, _config: Record<string, string>): Promise<unknown> {
   switch (action) {
@@ -1001,8 +1091,9 @@ async function routeConnectorRequest(request: ConnectorRequest): Promise<unknown
     case 'web':
     case 'file':
     case 'browser-history':
-    case 'whatsapp':
       return callDemoConnector(connector, action, config);
+    case 'whatsapp':
+      return callWhatsApp(config, action, params);
     default:
       throw new Error(`Unsupported connector: ${connector}`);
   }

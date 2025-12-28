@@ -129,13 +129,14 @@ export const connectors: Connector[] = [
   {
     id: 'whatsapp',
     name: 'WhatsApp',
-    description: 'Connect WhatsApp to search messages',
+    description: 'Connect WhatsApp Business API to access messages',
     icon: '💬',
     category: 'popular',
     isConnected: false,
     configFields: [
-      { name: 'phoneNumber', label: 'Phone Number', type: 'text', required: true, placeholder: '+1234567890' },
-      { name: 'businessId', label: 'Business Account ID', type: 'text', required: false, placeholder: 'Optional for business accounts' },
+      { name: 'accessToken', label: 'WhatsApp Business API Token', type: 'password', required: true, placeholder: 'Your WhatsApp Cloud API access token' },
+      { name: 'phoneNumberId', label: 'Phone Number ID', type: 'text', required: true, placeholder: 'Your WhatsApp phone number ID' },
+      { name: 'businessAccountId', label: 'Business Account ID', type: 'text', required: false, placeholder: 'Optional: WhatsApp Business Account ID' },
     ],
   },
 ];
