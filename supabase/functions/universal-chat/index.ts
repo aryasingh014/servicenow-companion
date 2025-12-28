@@ -147,6 +147,21 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "google_drive_read_file",
+      description: "Read the text content of a Google Drive file so you can summarize or analyze it. Use this when user asks to summarize, read, or analyze a Drive file.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_id: { type: "string", description: "The Google Drive file ID" },
+          file_name: { type: "string", description: "Optional file name for context" }
+        },
+        required: ["file_id"]
+      }
+    }
+  },
   // Jira tools
   {
     type: "function",
@@ -561,9 +576,15 @@ async function executeGoogleDrive(
       },
       body: JSON.stringify({
         connector: 'google-drive',
-        action: functionName === 'google_drive_list_files' ? 'listFiles' : 'searchFiles',
+        action: functionName === 'google_drive_list_files' 
+          ? 'listFiles' 
+          : functionName === 'google_drive_read_file' 
+            ? 'getFileContent' 
+            : 'searchFiles',
         config: config,
-        params: args,
+        params: functionName === 'google_drive_read_file' 
+          ? { fileId: args.file_id } 
+          : args,
       }),
     });
 
@@ -581,6 +602,18 @@ async function executeGoogleDrive(
     }
 
     const data = result.data;
+    
+    // Handle file content response (from google_drive_read_file)
+    if (data?.content !== undefined) {
+      return {
+        file_id: data.id,
+        file_name: data.name || args.file_name || 'Unknown',
+        mime_type: data.mimeType || 'unknown',
+        content: data.content,
+        content_length: data.content?.length || 0,
+        message: `Successfully retrieved content from "${data.name || 'file'}" (${data.content?.length || 0} characters)`,
+      };
+    }
     
     // Format response for better AI understanding
     if (data?.files && Array.isArray(data.files)) {
