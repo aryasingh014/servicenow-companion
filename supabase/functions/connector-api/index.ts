@@ -180,6 +180,75 @@ async function callGoogleDrive(config: Record<string, string>, action: string, p
         };
       }
       
+      case 'listFolders': {
+        const url = new URL(`${baseUrl}/files`);
+        url.searchParams.set('q', "mimeType='application/vnd.google-apps.folder'");
+        url.searchParams.set('pageSize', '100');
+        url.searchParams.set('fields', 'files(id,name,modifiedTime)');
+
+        const response = await fetch(url.toString(), {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to list folders: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return { folders: data.files || [] };
+      }
+
+      case 'getFileContent': {
+        const fileId = params?.fileId as string;
+        if (!fileId) throw new Error('fileId required');
+
+        // Get file metadata first
+        const metaResp = await fetch(`${baseUrl}/files/${fileId}?fields=id,name,mimeType`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        if (!metaResp.ok) throw new Error(`Failed to get file metadata: ${metaResp.status}`);
+        const meta = await metaResp.json();
+
+        // For Google Docs, export as plain text
+        let content = '';
+        if (meta.mimeType?.startsWith('application/vnd.google-apps')) {
+          const exportResp = await fetch(`${baseUrl}/files/${fileId}/export?mimeType=text/plain`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (exportResp.ok) {
+            content = await exportResp.text();
+          }
+        } else {
+          // For regular files, try to download
+          const dlResp = await fetch(`${baseUrl}/files/${fileId}?alt=media`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+          });
+          if (dlResp.ok) {
+            content = await dlResp.text();
+          }
+        }
+
+        return { id: meta.id, name: meta.name, mimeType: meta.mimeType, content: content.substring(0, 50000) };
+      }
+
+      case 'listFolderFiles': {
+        const folderId = params?.folderId as string;
+        if (!folderId) throw new Error('folderId required');
+
+        const url = new URL(`${baseUrl}/files`);
+        url.searchParams.set('q', `'${folderId}' in parents and mimeType != 'application/vnd.google-apps.folder'`);
+        url.searchParams.set('pageSize', '100');
+        url.searchParams.set('fields', 'files(id,name,mimeType,modifiedTime)');
+
+        const response = await fetch(url.toString(), {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+
+        if (!response.ok) throw new Error(`Failed to list folder files: ${response.status}`);
+        const data = await response.json();
+        return { files: data.files || [] };
+      }
+
       default:
         throw new Error(`Unknown Google Drive action: ${action}`);
     }

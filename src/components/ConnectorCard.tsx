@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Check, Settings, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Connector } from "@/types/connector";
+import { connectorIcons } from "@/components/ConnectorIcons";
 
 interface ConnectorCardProps {
   connector: Connector;
@@ -16,6 +17,8 @@ export const ConnectorCard = ({
   onDisconnect,
   onConfigure,
 }: ConnectorCardProps) => {
+  const IconComponent = connectorIcons[connector.id];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -37,7 +40,13 @@ export const ConnectorCard = ({
       )}
 
       <div className="flex items-start gap-3">
-        <div className="text-3xl">{connector.icon}</div>
+        <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
+          {IconComponent ? (
+            <IconComponent className="w-8 h-8" />
+          ) : (
+            <span className="text-3xl">{connector.icon}</span>
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-foreground truncate">
             {connector.name}

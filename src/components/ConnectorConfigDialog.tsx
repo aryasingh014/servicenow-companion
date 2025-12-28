@@ -22,6 +22,7 @@ import {
 import { Connector, ConnectorField } from "@/types/connector";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { connectorIcons } from "@/components/ConnectorIcons";
 
 interface ConnectorConfigDialogProps {
   connector: Connector | null;
@@ -351,12 +352,18 @@ export const ConnectorConfigDialog = ({
     }
   };
 
+  const IconComponent = connectorIcons[connector.id];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className="text-2xl">{connector.icon}</span>
+            {IconComponent ? (
+              <IconComponent className="w-6 h-6" />
+            ) : (
+              <span className="text-2xl">{connector.icon}</span>
+            )}
             {connector.isConnected ? "Configure" : "Connect"} {connector.name}
           </DialogTitle>
           <DialogDescription>{connector.description}</DialogDescription>
@@ -368,7 +375,11 @@ export const ConnectorConfigDialog = ({
             <div className="space-y-4">
               <div className="text-center py-6">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-3xl">{connector.icon}</span>
+                  {IconComponent ? (
+                    <IconComponent className="w-10 h-10" />
+                  ) : (
+                    <span className="text-3xl">{connector.icon}</span>
+                  )}
                 </div>
                 <h3 className="font-semibold mb-2">Connect with {connector.name}</h3>
                 <p className="text-sm text-muted-foreground mb-6">
