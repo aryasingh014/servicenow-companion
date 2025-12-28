@@ -193,6 +193,34 @@ const AVAILABLE_TOOLS = [
         required: ["query"]
       }
     }
+  },
+  // WhatsApp tools
+  {
+    type: "function",
+    function: {
+      name: "whatsapp_send_message",
+      description: "Send a WhatsApp message to a phone number. Use when user wants to send a message via WhatsApp.",
+      parameters: {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "Phone number with country code (e.g., +1234567890)" },
+          message: { type: "string", description: "Message text to send" }
+        },
+        required: ["to", "message"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "whatsapp_get_conversations",
+      description: "Get WhatsApp Business conversation analytics and counts.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
   }
 ];
 
@@ -622,6 +650,57 @@ async function executeRAGSearch(
   }
 }
 
+// Execute WhatsApp function
+async function executeWhatsApp(
+  functionName: string,
+  args: Record<string, unknown>,
+  config: Record<string, string>,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<unknown> {
+  try {
+    console.log(`Executing WhatsApp: ${functionName}`, args);
+    
+    let action = 'testConnection';
+    if (functionName === 'whatsapp_send_message') {
+      action = 'sendMessage';
+    } else if (functionName === 'whatsapp_get_conversations') {
+      action = 'getMessages';
+    }
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/connector-api`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        connector: 'whatsapp',
+        action,
+        config,
+        params: args,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('WhatsApp API error:', response.status, errorText);
+      return { error: 'WhatsApp request failed', details: errorText };
+    }
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      return { error: result.error || 'WhatsApp request failed' };
+    }
+
+    return result.data;
+  } catch (error) {
+    console.error('WhatsApp execution error:', error);
+    return { error: error instanceof Error ? error.message : 'WhatsApp request failed' };
+  }
+}
+
 // Execute tool call
 async function executeTool(
   toolName: string,
@@ -655,6 +734,14 @@ async function executeTool(
 
   if (toolName === 'search_documents') {
     return executeRAGSearch(args, supabaseUrl, supabaseKey);
+  }
+
+  if (toolName.startsWith('whatsapp_')) {
+    const source = connectedSources.find(s => s.type === 'whatsapp' || s.id === 'whatsapp');
+    if (!source?.config) {
+      return { error: "WhatsApp not connected. Please connect WhatsApp Business API in Settings." };
+    }
+    return executeWhatsApp(toolName, args, source.config, supabaseUrl, supabaseKey);
   }
 
   return { error: `Unknown tool: ${toolName}` };
@@ -703,6 +790,7 @@ ${connectedSources.length > 0 ? sourceNames : 'None connected yet'}
 - **ServiceNow**: Search articles, get counts, manage incidents
 - **Google Drive**: List and search files
 - **Jira**: Search and retrieve issues
+- **WhatsApp**: Send messages via WhatsApp Business API
 - **Documents**: Search uploaded files and knowledge bases
 
 ## CRITICAL: You MUST call functions when available. Never say "I can't" if a function exists.
