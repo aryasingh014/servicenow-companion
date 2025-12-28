@@ -124,21 +124,26 @@ export default function Settings() {
   // Load connected configs from localStorage
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const configs: ConnectorConfig[] = JSON.parse(saved);
-        setConnectedConfigs(configs);
-        
-        // Update connector list with connected status
-        setConnectorList((prev) =>
-          prev.map((connector) => ({
-            ...connector,
-            isConnected: configs.some((c) => c.connectorId === connector.id),
-          }))
-        );
-      } catch (e) {
-        console.error("Error parsing saved connectors:", e);
-      }
+    if (!saved) return;
+
+    try {
+      const configs: ConnectorConfig[] = JSON.parse(saved);
+      setConnectedConfigs(configs);
+
+      // Update connector list with connected status.
+      // For OAuth connectors, only treat as "connected" if we have a usable accessToken.
+      setConnectorList((prev) =>
+        prev.map((connector) => {
+          const cfg = configs.find((c) => c.connectorId === connector.id);
+          const hasConfig = Boolean(cfg);
+          const hasOAuthToken = Boolean(cfg?.config?.accessToken);
+
+          const isConnected = connector.useOAuth ? hasOAuthToken : hasConfig;
+          return { ...connector, isConnected };
+        })
+      );
+    } catch (e) {
+      console.error("Error parsing saved connectors:", e);
     }
   }, []);
 
