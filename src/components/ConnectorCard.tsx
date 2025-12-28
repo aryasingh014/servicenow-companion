@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Settings, Unplug, RefreshCw, CheckCircle, XCircle } from "lucide-react";
+import { Check, Settings, Unplug, RefreshCw, CheckCircle, XCircle, Mail, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Connector } from "@/types/connector";
 import { connectorIcons } from "@/components/ConnectorIcons";
@@ -22,6 +22,7 @@ export const ConnectorCard = ({
   onConfigure,
 }: ConnectorCardProps) => {
   const [isTesting, setIsTesting] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const { toast } = useToast();
   const IconComponent = connectorIcons[connector.id];
@@ -62,8 +63,50 @@ export const ConnectorCard = ({
       });
     } finally {
       setIsTesting(false);
-      // Reset status after 3 seconds
       setTimeout(() => setTestStatus('idle'), 3000);
+    }
+  };
+
+  const handleIndexEmails = async () => {
+    setIsIndexing(true);
+    
+    try {
+      const config = getConnectorConfig(connector.id);
+      if (!config) {
+        throw new Error('No configuration found');
+      }
+
+      toast({
+        title: "Indexing emails...",
+        description: "Fetching and indexing your latest emails for AI search.",
+      });
+
+      const { data, error } = await supabase.functions.invoke('connector-api', {
+        body: {
+          connector: 'email',
+          action: 'indexEmails',
+          config,
+          params: { limit: 50 },
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const result = data?.data as { indexed?: number; skipped?: number; errors?: number; message?: string } | undefined;
+      toast({
+        title: "Emails indexed! 🎉",
+        description: result?.message || `${result?.indexed || 0} emails are now searchable by NOVA.`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to index emails';
+      toast({
+        title: "Indexing failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsIndexing(false);
     }
   };
 
@@ -127,6 +170,25 @@ export const ConnectorCard = ({
                 <Unplug className="w-4 h-4" />
               </Button>
             </div>
+            
+            {/* Email-specific: Index Emails button */}
+            {connector.id === 'email' && (
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full"
+                onClick={handleIndexEmails}
+                disabled={isIndexing}
+              >
+                {isIndexing ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <Mail className="w-4 h-4 mr-1" />
+                )}
+                {isIndexing ? 'Indexing...' : 'Index Emails'}
+              </Button>
+            )}
+            
             <Button
               variant="secondary"
               size="sm"

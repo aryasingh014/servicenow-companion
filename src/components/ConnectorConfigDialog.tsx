@@ -108,11 +108,18 @@ export const ConnectorConfigDialog = ({
   const handleGoogleOAuth = async () => {
     setIsSaving(true);
     try {
+      // Determine scopes based on connector type
+      const scopes = connector.id === 'email' 
+        ? 'https://www.googleapis.com/auth/gmail.readonly'
+        : 'https://www.googleapis.com/auth/drive.readonly';
+      
+      const redirectConnector = connector.id === 'email' ? 'email' : 'google-drive';
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          scopes: 'https://www.googleapis.com/auth/drive.readonly',
-          redirectTo: `${window.location.origin}/settings?connector=google-drive`,
+          scopes,
+          redirectTo: `${window.location.origin}/settings?connector=${redirectConnector}`,
         },
       });
 
