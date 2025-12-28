@@ -24,6 +24,25 @@ async function callGoogleDrive(config: Record<string, string>, action: string, p
   
   try {
     switch (action) {
+      case 'testConnection': {
+        // Simple test: try to list 1 file
+        const url = new URL(`${baseUrl}/files`);
+        url.searchParams.set('pageSize', '1');
+        url.searchParams.set('fields', 'files(id)');
+        
+        const response = await fetch(url.toString(), {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 401) throw new Error('Authentication expired. Please reconnect.');
+          if (response.status === 403) throw new Error('Access denied. Check Drive permissions.');
+          throw new Error(`Connection failed: ${response.status}`);
+        }
+        
+        return { success: true, message: 'Google Drive connection is working' };
+      }
+
       case 'listFiles': {
         const queryText = typeof params?.query === 'string' ? (params?.query as string) : '';
         const escaped = queryText.replace(/\\/g, '\\\\').replace(/'/g, "\\'").trim();
@@ -273,6 +292,14 @@ async function callConfluence(config: Record<string, string>, action: string, pa
   const authHeader = 'Basic ' + btoa(`${email}:${apiToken}`);
 
   switch (action) {
+    case 'testConnection': {
+      const response = await fetch(`${baseUrl}/wiki/rest/api/space?limit=1`, {
+        headers: { 'Authorization': authHeader, 'Accept': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`Connection failed: ${response.status}`);
+      return { success: true, message: 'Confluence connection is working' };
+    }
+    
     case 'searchContent':
       const query = params?.query as string || '';
       const cql = encodeURIComponent(`text ~ "${query}" OR title ~ "${query}"`);
@@ -306,6 +333,14 @@ async function callJira(config: Record<string, string>, action: string, params?:
   const authHeader = 'Basic ' + btoa(`${email}:${apiToken}`);
 
   switch (action) {
+    case 'testConnection': {
+      const response = await fetch(`${baseUrl}/rest/api/3/myself`, {
+        headers: { 'Authorization': authHeader, 'Accept': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`Connection failed: ${response.status}`);
+      return { success: true, message: 'Jira connection is working' };
+    }
+    
     case 'searchIssues':
       const query = params?.query as string || '';
       const jql = encodeURIComponent(`text ~ "${query}" OR summary ~ "${query}"`);
@@ -342,6 +377,14 @@ async function callNotion(config: Record<string, string>, action: string, params
   };
 
   switch (action) {
+    case 'testConnection': {
+      const response = await fetch('https://api.notion.com/v1/users/me', {
+        headers,
+      });
+      if (!response.ok) throw new Error(`Connection failed: ${response.status}`);
+      return { success: true, message: 'Notion connection is working' };
+    }
+    
     case 'search':
       const query = params?.query as string || '';
       const response = await fetch('https://api.notion.com/v1/search', {
@@ -380,6 +423,12 @@ async function callGitHub(config: Record<string, string>, action: string, params
   };
 
   switch (action) {
+    case 'testConnection': {
+      const response = await fetch('https://api.github.com/user', { headers });
+      if (!response.ok) throw new Error(`Connection failed: ${response.status}`);
+      return { success: true, message: 'GitHub connection is working' };
+    }
+    
     case 'searchCode':
       const query = params?.query as string || '';
       const org = organization ? `+org:${organization}` : '';
@@ -425,6 +474,14 @@ async function callSlack(config: Record<string, string>, action: string, params?
   };
 
   switch (action) {
+    case 'testConnection': {
+      const response = await fetch('https://slack.com/api/auth.test', { headers });
+      if (!response.ok) throw new Error(`Connection failed: ${response.status}`);
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Slack authentication failed');
+      return { success: true, message: 'Slack connection is working' };
+    }
+    
     case 'searchMessages':
       const query = params?.query as string || '';
       const response = await fetch(`https://slack.com/api/search.messages?query=${encodeURIComponent(query)}&count=10`, {
@@ -466,6 +523,20 @@ async function callServiceNow(config: Record<string, string>, action: string, pa
   let body: string | undefined;
 
   switch (action) {
+    case 'testConnection': {
+      const response = await fetch(`${baseUrl}/api/now/table/sys_user?sysparm_limit=1`, {
+        headers: {
+          'Authorization': authHeader,
+          'Accept': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('Authentication failed. Check credentials.');
+        throw new Error(`Connection failed: ${response.status}`);
+      }
+      return { success: true, message: 'ServiceNow connection is working' };
+    }
+    
     case 'getArticleCount': {
       // Try stats API first, fallback to table query
       try {
