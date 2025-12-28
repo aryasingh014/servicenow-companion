@@ -96,7 +96,9 @@ export const CalendarIcon = ({ className = 'w-6 h-6' }: { className?: string }) 
     <rect x="3" y="4" width="18" height="18" rx="2" fill="#4285F4" />
     <rect x="3" y="4" width="18" height="4" fill="#1A73E8" />
     <path d="M7 2v4M17 2v4" stroke="#4285F4" strokeWidth="2" strokeLinecap="round" />
-    <text x="12" y="16" textAnchor="middle" fill="white" fontSize="8" fontWeight="bold">31</text>
+    <rect x="7" y="11" width="4" height="3" fill="white" rx="0.5" />
+    <rect x="13" y="11" width="4" height="3" fill="white" rx="0.5" />
+    <rect x="7" y="16" width="4" height="3" fill="white" rx="0.5" />
   </svg>
 );
 
