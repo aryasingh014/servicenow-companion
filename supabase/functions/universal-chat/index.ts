@@ -721,6 +721,9 @@ async function executeTool(
     if (!source?.config) {
       return { error: "Google Drive not connected. Please connect Google Drive in Settings." };
     }
+    if (!source.config.accessToken) {
+      return { error: "Google Drive needs to be reconnected. Please disconnect and connect again to grant access." };
+    }
     return executeGoogleDrive(toolName, args, source.config);
   }
 
