@@ -280,6 +280,200 @@ async function callGoogleDrive(config: Record<string, string>, action: string, p
   }
 }
 
+// Gmail API helper
+async function callGmail(config: Record<string, string>, action: string, params?: Record<string, unknown>): Promise<unknown> {
+  const { accessToken } = config;
+  
+  if (!accessToken) {
+    throw new Error('Gmail access token not configured. Please reconnect Email with OAuth.');
+  }
+
+  const baseUrl = 'https://gmail.googleapis.com/gmail/v1/users/me';
+
+  try {
+    switch (action) {
+      case 'testConnection': {
+        const response = await fetch(`${baseUrl}/profile`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 401) throw new Error('Authentication expired. Please reconnect.');
+          if (response.status === 403) throw new Error('Access denied. Check Gmail permissions.');
+          throw new Error(`Connection failed: ${response.status}`);
+        }
+        
+        const profile = await response.json();
+        return { success: true, message: `Connected to ${profile.emailAddress}` };
+      }
+
+      case 'fetchEmails': {
+        const limit = (params?.limit as number) || 50;
+        
+        // List messages
+        const listResp = await fetch(
+          `${baseUrl}/messages?maxResults=${limit}`,
+          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+        );
+
+        if (!listResp.ok) {
+          if (listResp.status === 401) throw new Error('Gmail authentication expired. Please reconnect.');
+          if (listResp.status === 403) throw new Error('Gmail access denied. Check permissions.');
+          throw new Error(`Gmail API error: ${listResp.status}`);
+        }
+
+        const listData = await listResp.json();
+        const messageIds = listData.messages || [];
+
+        const emails: Array<{
+          id: string;
+          subject: string;
+          from: string;
+          date: string;
+          snippet: string;
+          body: string;
+        }> = [];
+
+        for (const msg of messageIds.slice(0, limit)) {
+          try {
+            const msgResp = await fetch(
+              `${baseUrl}/messages/${msg.id}?format=full`,
+              { headers: { 'Authorization': `Bearer ${accessToken}` } }
+            );
+
+            if (!msgResp.ok) continue;
+
+            const msgData = await msgResp.json();
+            const headers = msgData.payload?.headers || [];
+
+            const getHeader = (name: string) =>
+              headers.find((h: { name: string; value: string }) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+            // Extract body
+            let body = '';
+            const payload = msgData.payload;
+            if (payload?.body?.data) {
+              body = atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+            } else if (payload?.parts) {
+              for (const part of payload.parts) {
+                if (part.mimeType === 'text/plain' && part.body?.data) {
+                  body = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+                  break;
+                }
+              }
+            }
+
+            emails.push({
+              id: msg.id,
+              subject: getHeader('Subject') || '(No Subject)',
+              from: getHeader('From'),
+              date: getHeader('Date'),
+              snippet: msgData.snippet || '',
+              body: body.substring(0, 5000),
+            });
+          } catch (msgError) {
+            console.warn('Failed to fetch message:', msgError);
+          }
+        }
+
+        return { emails, count: emails.length };
+      }
+
+      case 'indexEmails': {
+        const limit = (params?.limit as number) || 50;
+        
+        // Fetch emails first
+        const result = await callGmail(config, 'fetchEmails', { limit }) as { emails: Array<{ id: string; subject: string; from: string; date: string; body: string }> };
+        const emails = result.emails || [];
+
+        // Index into documents table via rag-service logic
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+        const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+          throw new Error('Supabase configuration missing');
+        }
+
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let indexed = 0;
+        let skipped = 0;
+        let errors = 0;
+
+        for (const email of emails) {
+          try {
+            // Create content hash for deduplication
+            const encoder = new TextEncoder();
+            const data = encoder.encode(email.id + email.subject + email.date);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const contentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+            // Check for existing
+            const { data: existing } = await supabase
+              .from('documents')
+              .select('id')
+              .eq('connector_id', 'email')
+              .eq('content_hash', contentHash)
+              .maybeSingle();
+
+            if (existing) {
+              skipped++;
+              continue;
+            }
+
+            // Build document content
+            const content = `Subject: ${email.subject}\nFrom: ${email.from}\nDate: ${email.date}\n\n${email.body}`;
+
+            // Insert document
+            const { error } = await supabase
+              .from('documents')
+              .insert({
+                connector_id: 'email',
+                source_type: 'email',
+                source_id: email.id,
+                title: email.subject,
+                content: content.substring(0, 50000),
+                content_hash: contentHash,
+                metadata: {
+                  from: email.from,
+                  date: email.date,
+                },
+              });
+
+            if (error) {
+              console.error(`Failed to index email ${email.id}:`, error);
+              errors++;
+            } else {
+              indexed++;
+            }
+          } catch (emailError) {
+            console.error(`Error processing email:`, emailError);
+            errors++;
+          }
+        }
+
+        return { 
+          indexed, 
+          skipped, 
+          errors, 
+          message: `Indexed ${indexed} emails, skipped ${skipped} duplicates, ${errors} errors` 
+        };
+      }
+
+      default:
+        throw new Error(`Unknown Gmail action: ${action}`);
+    }
+  } catch (error) {
+    console.error('Gmail API error:', error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Gmail request failed');
+  }
+}
+
 // Confluence API helper
 async function callConfluence(config: Record<string, string>, action: string, params?: Record<string, unknown>): Promise<unknown> {
   const { url, email, apiToken } = config;
@@ -753,6 +947,8 @@ async function routeConnectorRequest(request: ConnectorRequest): Promise<unknown
   switch (connector) {
     case 'google-drive':
       return callGoogleDrive(config, action, params);
+    case 'email':
+      return callGmail(config, action, params);
     case 'confluence':
       return callConfluence(config, action, params);
     case 'jira':

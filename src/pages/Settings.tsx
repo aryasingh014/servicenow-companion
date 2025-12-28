@@ -22,10 +22,10 @@ export default function Settings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
 
-  // Handle OAuth callback
+  // Handle OAuth callback for Google Drive and Email
   useEffect(() => {
     const connectorParam = searchParams.get('connector');
-    if (connectorParam !== 'google-drive') return;
+    if (connectorParam !== 'google-drive' && connectorParam !== 'email') return;
 
     let cancelled = false;
 
@@ -36,28 +36,31 @@ export default function Settings() {
 
       if (!accessToken) {
         toast({
-          title: 'Google Drive connection incomplete',
-          description: 'I couldn\'t get an access token back from Google. Please try connecting again.',
+          title: `${connectorParam === 'email' ? 'Email' : 'Google Drive'} connection incomplete`,
+          description: 'Could not get an access token. Please try connecting again.',
           variant: 'destructive',
         });
         return;
       }
 
-      // Quick verification (so we don't show "Connected" if Drive API is actually denying access)
+      // Quick verification
+      const connectorType = connectorParam === 'email' ? 'email' : 'google-drive';
+      const actionType = connectorParam === 'email' ? 'testConnection' : 'getFileCount';
+      
       const { data: testData, error: testError } = await supabase.functions.invoke('connector-api', {
         body: {
-          connector: 'google-drive',
-          action: 'getFileCount',
+          connector: connectorType,
+          action: actionType,
           config: { accessToken },
         },
       });
 
-      const testOk = !testError && (testData as any)?.success === true;
+      const testOk = !testError && (testData as { success?: boolean })?.success === true;
       if (!testOk) {
-        const reason = testError?.message || (testData as any)?.error || 'Drive API request failed';
+        const reason = testError?.message || (testData as { error?: string })?.error || 'API request failed';
         toast({
-          title: 'Google Drive connected, but access failed',
-          description: `${reason}. If you\'re seeing Google\'s 403 page, you\'re probably signed into a different Google account in your browser than the one you connected here.`,
+          title: `${connectorParam === 'email' ? 'Email' : 'Google Drive'} connected, but access failed`,
+          description: `${reason}. If you're seeing a 403 error, you may be signed into a different Google account.`,
           variant: 'destructive',
         });
         return;
@@ -66,7 +69,7 @@ export default function Settings() {
       if (cancelled) return;
 
       const newConfig: ConnectorConfig = {
-        connectorId: 'google-drive',
+        connectorId: connectorType,
         config: {
           accessToken,
           email,
@@ -77,7 +80,7 @@ export default function Settings() {
       // Save to connected configs
       const saved = localStorage.getItem(STORAGE_KEY);
       let configs: ConnectorConfig[] = saved ? JSON.parse(saved) : [];
-      const existingIndex = configs.findIndex(c => c.connectorId === 'google-drive');
+      const existingIndex = configs.findIndex(c => c.connectorId === connectorType);
 
       if (existingIndex >= 0) {
         configs[existingIndex] = newConfig;
@@ -90,12 +93,17 @@ export default function Settings() {
 
       // Update connector status
       setConnectorList((prev) =>
-        prev.map((c) => (c.id === 'google-drive' ? { ...c, isConnected: true } : c))
+        prev.map((c) => (c.id === connectorType ? { ...c, isConnected: true } : c))
       );
 
+      const displayName = connectorParam === 'email' ? 'Email (Gmail)' : 'Google Drive';
+      const description = connectorParam === 'email' 
+        ? `Connected as ${email}. You can now index your emails for AI search.`
+        : `Connected as ${email}. You can now ask NOVA to search your Drive files.`;
+
       toast({
-        title: 'Google Drive connected',
-        description: email ? `Connected as ${email}. You can now ask NOVA to list or search your Drive files.` : 'You can now ask NOVA to list or search your Drive files.',
+        title: `${displayName} connected`,
+        description,
       });
 
       // Clean up URL
