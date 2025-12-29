@@ -672,85 +672,157 @@ async function executeGoogleDrive(
   args: Record<string, unknown>,
   config: Record<string, string>
 ): Promise<unknown> {
-  const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
-  const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  // Check for server-side access token first (from secrets)
+  const serverAccessToken = Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN') || '';
+  const accessToken = config?.accessToken || serverAccessToken;
+
+  if (!accessToken) {
+    return { error: "Google Drive not configured. Please add your access token in Settings or as a secret." };
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Accept': 'application/json',
+  };
 
   try {
     console.log(`Executing Google Drive: ${functionName}`, args);
-    
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/connector-api`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-      },
-      body: JSON.stringify({
-        connector: 'google-drive',
-        action: functionName === 'google_drive_list_files' 
-          ? 'listFiles' 
-          : functionName === 'google_drive_read_file' 
-            ? 'getFileContent' 
-            : 'searchFiles',
-        config: config,
-        params: functionName === 'google_drive_read_file' 
-          ? { fileId: args.file_id } 
-          : args,
-      }),
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Google Drive API error:', response.status, errorText);
-      return { error: 'Google Drive request failed', details: errorText };
-    }
-
-    const result = await response.json();
-    console.log('Google Drive API result:', JSON.stringify(result).substring(0, 500));
-    
-    if (!result.success) {
-      return { error: result.error || 'Google Drive request failed' };
-    }
-
-    const data = result.data;
-    
-    // Handle file content response (from google_drive_read_file)
-    if (data?.content !== undefined) {
-      return {
-        file_id: data.id,
-        file_name: data.name || args.file_name || 'Unknown',
-        mime_type: data.mimeType || 'unknown',
-        content: data.content,
-        content_length: data.content?.length || 0,
-        message: `Successfully retrieved content from "${data.name || 'file'}" (${data.content?.length || 0} characters)`,
-      };
-    }
-    
-    // Format response for better AI understanding
-    if (data?.files && Array.isArray(data.files)) {
-      if (data.files.length === 0) {
+    switch (functionName) {
+      case 'google_drive_list_files': {
+        const query = args.query as string || '';
+        let url = 'https://www.googleapis.com/drive/v3/files?pageSize=20&fields=files(id,name,mimeType,description,webViewLink,modifiedTime)';
+        if (query) {
+          url += `&q=name contains '${query.replace(/'/g, "\\'")}'`;
+        }
+        
+        const response = await fetch(url, { headers });
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('Google Drive list error:', response.status, error);
+          return { error: `Google Drive API error: ${response.status}` };
+        }
+        
+        const data = await response.json();
+        const files = data.files || [];
+        
         return {
-          files: [],
-          total: 0,
-          message: `No files found${args.query ? ` matching "${args.query}"` : ''} in Google Drive. Try a different search term or check if files exist.`,
+          files: files.map((file: any) => ({
+            id: file.id,
+            name: file.name,
+            type: file.mimeType || 'unknown',
+            description: file.description || '',
+            link: file.webViewLink || '',
+            modified: file.modifiedTime || '',
+          })),
+          total: files.length,
+          message: `Found ${files.length} file(s)${query ? ` matching "${query}"` : ''} in Google Drive`,
         };
       }
-      
-      return {
-        files: data.files.map((file: any) => ({
-          id: file.id,
-          name: file.name,
-          type: file.mimeType || 'unknown',
-          description: file.description || '',
-          link: file.webViewLink || '',
-          modified: file.modifiedTime || '',
-        })),
-        total: data.total || data.files.length,
-        message: `Found ${data.files.length} file(s)${args.query ? ` matching "${args.query}"` : ''} in Google Drive`,
-      };
+
+      case 'google_drive_search_files': {
+        const query = args.query as string;
+        if (!query) {
+          return { error: "Search query is required" };
+        }
+        
+        const searchQuery = `fullText contains '${query.replace(/'/g, "\\'")}'`;
+        const url = `https://www.googleapis.com/drive/v3/files?pageSize=20&fields=files(id,name,mimeType,description,webViewLink,modifiedTime)&q=${encodeURIComponent(searchQuery)}`;
+        
+        const response = await fetch(url, { headers });
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('Google Drive search error:', response.status, error);
+          return { error: `Google Drive API error: ${response.status}` };
+        }
+        
+        const data = await response.json();
+        const files = data.files || [];
+        
+        return {
+          files: files.map((file: any) => ({
+            id: file.id,
+            name: file.name,
+            type: file.mimeType || 'unknown',
+            description: file.description || '',
+            link: file.webViewLink || '',
+            modified: file.modifiedTime || '',
+          })),
+          total: files.length,
+          message: `Found ${files.length} file(s) matching "${query}" in Google Drive`,
+        };
+      }
+
+      case 'google_drive_read_file': {
+        const fileId = args.file_id as string;
+        if (!fileId) {
+          return { error: "File ID is required" };
+        }
+
+        // First get file metadata to check the type
+        const metaResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType`,
+          { headers }
+        );
+        
+        if (!metaResponse.ok) {
+          const error = await metaResponse.text();
+          console.error('Google Drive metadata error:', metaResponse.status, error);
+          return { error: `Could not access file: ${metaResponse.status}` };
+        }
+        
+        const metadata = await metaResponse.json();
+        const mimeType = metadata.mimeType || '';
+        let content = '';
+
+        // For Google Docs, Sheets, Slides - export as text
+        if (mimeType.includes('application/vnd.google-apps')) {
+          let exportMime = 'text/plain';
+          if (mimeType.includes('spreadsheet')) {
+            exportMime = 'text/csv';
+          }
+          
+          const exportResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
+            { headers }
+          );
+          
+          if (!exportResponse.ok) {
+            const error = await exportResponse.text();
+            console.error('Google Drive export error:', exportResponse.status, error);
+            return { error: `Could not export file: ${exportResponse.status}` };
+          }
+          
+          content = await exportResponse.text();
+        } else {
+          // For regular files, download content
+          const downloadResponse = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+            { headers }
+          );
+          
+          if (!downloadResponse.ok) {
+            const error = await downloadResponse.text();
+            console.error('Google Drive download error:', downloadResponse.status, error);
+            return { error: `Could not download file: ${downloadResponse.status}` };
+          }
+          
+          content = await downloadResponse.text();
+        }
+
+        return {
+          file_id: fileId,
+          file_name: metadata.name || args.file_name || 'Unknown',
+          mime_type: mimeType,
+          content: content.substring(0, 50000), // Limit content size
+          content_length: content.length,
+          message: `Successfully retrieved content from "${metadata.name}" (${content.length} characters)`,
+        };
+      }
+
+      default:
+        return { error: `Unknown function: ${functionName}` };
     }
-    
-    // If no files array, return the data as-is
-    return data;
   } catch (error) {
     console.error('Google Drive execution error:', error);
     return { error: error instanceof Error ? error.message : 'Google Drive request failed' };
