@@ -1164,11 +1164,15 @@ async function executeTool(
 
   if (toolName.startsWith('google_drive_')) {
     const source = connectedSources.find(s => s.type === 'google-drive' || s.id === 'google-drive');
-    if (!source?.config) {
-      return { error: "Google Drive not connected. Please connect Google Drive in Settings." };
+    const serverToken = Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN');
+    
+    // Use server-side token if available, otherwise use client config
+    if (serverToken) {
+      return executeGoogleDrive(toolName, args, { accessToken: serverToken });
     }
-    if (!source.config.accessToken) {
-      return { error: "Google Drive needs to be reconnected. Please disconnect and connect again to grant access." };
+    
+    if (!source?.config?.accessToken) {
+      return { error: "Google Drive not connected. Please add your access token as a secret or connect in Settings." };
     }
     return executeGoogleDrive(toolName, args, source.config);
   }
@@ -1217,7 +1221,7 @@ function shortenId(id: string): string {
 function buildSystemPrompt(connectedSources: ConnectedSource[]): string {
   const sourceNames = connectedSources.map(s => s.name).join(', ');
   const hasServiceNow = connectedSources.some(s => s.type === 'servicenow' || s.id === 'servicenow') || Deno.env.get('SERVICENOW_INSTANCE');
-  const hasGoogleDrive = connectedSources.some(s => s.type === 'google-drive' || s.id === 'google-drive');
+  const hasGoogleDrive = !!Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'google-drive' || s.id === 'google-drive');
   const hasGitHub = !!Deno.env.get('GITHUB_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'github' || s.id === 'github');
   
   return `You are NOVA, a friendly and intelligent AI assistant. You communicate naturally like a helpful colleague, not a robot.
@@ -1316,9 +1320,10 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
       return connectedTypes.has('servicenow') || hasEnvConfig;
     }
     
-    // Google Drive tools
+    // Google Drive tools - check both client config and server secret
     if (name.startsWith('google_drive_')) {
-      return connectedTypes.has('google-drive');
+      const hasServerToken = !!Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN');
+      return connectedTypes.has('google-drive') || hasServerToken;
     }
     
     // Jira tools
