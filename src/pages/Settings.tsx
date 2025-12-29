@@ -127,7 +127,29 @@ export default function Settings() {
     if (!saved) return;
 
     try {
-      const configs: ConnectorConfig[] = JSON.parse(saved);
+      let configs: ConnectorConfig[] = JSON.parse(saved);
+      
+      // Clean up any OAuth connectors that have invalid config (clientId/clientSecret instead of accessToken)
+      const oauthConnectorIds = ['google-drive', 'email', 'calendar'];
+      let hasInvalidConfig = false;
+      
+      configs = configs.filter((cfg) => {
+        if (oauthConnectorIds.includes(cfg.connectorId)) {
+          // OAuth connectors MUST have accessToken, not clientId/clientSecret
+          if (!cfg.config?.accessToken && (cfg.config?.clientId || cfg.config?.clientSecret)) {
+            console.warn(`Removing invalid OAuth config for ${cfg.connectorId} - has clientId/clientSecret instead of accessToken`);
+            hasInvalidConfig = true;
+            return false; // Remove this invalid config
+          }
+        }
+        return true;
+      });
+      
+      // Save cleaned config if we removed any invalid entries
+      if (hasInvalidConfig) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
+      }
+      
       setConnectedConfigs(configs);
 
       // Update connector list with connected status.
