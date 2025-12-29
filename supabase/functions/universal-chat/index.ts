@@ -236,6 +236,116 @@ const AVAILABLE_TOOLS = [
         required: []
       }
     }
+  },
+  // GitHub tools
+  {
+    type: "function",
+    function: {
+      name: "github_list_repos",
+      description: "List GitHub repositories. Use when user asks to list, show, or see their repos/repositories.",
+      parameters: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["all", "owner", "public", "private", "member"], description: "Type of repos to list" },
+          sort: { type: "string", enum: ["created", "updated", "pushed", "full_name"], description: "Sort order" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_get_repo",
+      description: "Get details of a specific GitHub repository by owner and repo name.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string", description: "Repository owner (username or org)" },
+          repo: { type: "string", description: "Repository name" }
+        },
+        required: ["owner", "repo"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_search_repos",
+      description: "Search GitHub repositories by query. Use when user asks to search or find repos.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+          language: { type: "string", description: "Filter by programming language" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_search_code",
+      description: "Search code in GitHub repositories. Use when user asks to find code or search in files.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+          repo: { type: "string", description: "Filter by repo (owner/repo format)" },
+          language: { type: "string", description: "Filter by programming language" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_get_file",
+      description: "Get the contents of a file from a GitHub repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string", description: "Repository owner" },
+          repo: { type: "string", description: "Repository name" },
+          path: { type: "string", description: "File path in the repository" },
+          branch: { type: "string", description: "Branch name (default: main)" }
+        },
+        required: ["owner", "repo", "path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_list_issues",
+      description: "List issues in a GitHub repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string", description: "Repository owner" },
+          repo: { type: "string", description: "Repository name" },
+          state: { type: "string", enum: ["open", "closed", "all"], description: "Issue state filter" }
+        },
+        required: ["owner", "repo"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_list_pulls",
+      description: "List pull requests in a GitHub repository.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string", description: "Repository owner" },
+          repo: { type: "string", description: "Repository name" },
+          state: { type: "string", enum: ["open", "closed", "all"], description: "PR state filter" }
+        },
+        required: ["owner", "repo"]
+      }
+    }
   }
 ];
 
@@ -734,6 +844,237 @@ async function executeWhatsApp(
   }
 }
 
+// Execute GitHub function
+async function executeGitHub(
+  functionName: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const GITHUB_TOKEN = Deno.env.get('GITHUB_ACCESS_TOKEN') || '';
+
+  if (!GITHUB_TOKEN) {
+    return { error: "GitHub not configured. Please add your GitHub access token in Settings." };
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${GITHUB_TOKEN}`,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  try {
+    switch (functionName) {
+      case 'github_list_repos': {
+        const type = (args.type as string) || 'all';
+        const sort = (args.sort as string) || 'updated';
+        const response = await fetch(
+          `https://api.github.com/user/repos?type=${type}&sort=${sort}&per_page=20`,
+          { headers }
+        );
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('GitHub list repos error:', error);
+          return { error: `GitHub API error: ${response.status}` };
+        }
+        const repos = await response.json();
+        return {
+          repos: repos.map((r: any) => ({
+            name: r.full_name,
+            description: r.description || 'No description',
+            language: r.language || 'Unknown',
+            stars: r.stargazers_count,
+            forks: r.forks_count,
+            url: r.html_url,
+            updated: r.updated_at,
+            private: r.private,
+          })),
+          total: repos.length,
+          message: `Found ${repos.length} repositories`,
+        };
+      }
+
+      case 'github_get_repo': {
+        const owner = args.owner as string;
+        const repo = args.repo as string;
+        const response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}`,
+          { headers }
+        );
+        if (!response.ok) {
+          return { error: `Repository ${owner}/${repo} not found` };
+        }
+        const r = await response.json();
+        return {
+          name: r.full_name,
+          description: r.description || 'No description',
+          language: r.language,
+          stars: r.stargazers_count,
+          forks: r.forks_count,
+          watchers: r.watchers_count,
+          open_issues: r.open_issues_count,
+          default_branch: r.default_branch,
+          url: r.html_url,
+          created: r.created_at,
+          updated: r.updated_at,
+          private: r.private,
+        };
+      }
+
+      case 'github_search_repos': {
+        const query = args.query as string;
+        const language = args.language as string;
+        let searchQuery = query;
+        if (language) searchQuery += ` language:${language}`;
+        
+        const response = await fetch(
+          `https://api.github.com/search/repositories?q=${encodeURIComponent(searchQuery)}&per_page=10`,
+          { headers }
+        );
+        if (!response.ok) {
+          return { error: `Search failed: ${response.status}` };
+        }
+        const data = await response.json();
+        return {
+          repos: data.items?.map((r: any) => ({
+            name: r.full_name,
+            description: r.description || 'No description',
+            language: r.language || 'Unknown',
+            stars: r.stargazers_count,
+            url: r.html_url,
+          })) || [],
+          total: data.total_count,
+          message: `Found ${data.total_count} repositories matching "${query}"`,
+        };
+      }
+
+      case 'github_search_code': {
+        const query = args.query as string;
+        const repo = args.repo as string;
+        const language = args.language as string;
+        
+        let searchQuery = query;
+        if (repo) searchQuery += ` repo:${repo}`;
+        if (language) searchQuery += ` language:${language}`;
+        
+        const response = await fetch(
+          `https://api.github.com/search/code?q=${encodeURIComponent(searchQuery)}&per_page=10`,
+          { headers }
+        );
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('GitHub search code error:', error);
+          return { error: `Code search failed: ${response.status}` };
+        }
+        const data = await response.json();
+        return {
+          results: data.items?.map((item: any) => ({
+            file: item.name,
+            path: item.path,
+            repo: item.repository?.full_name,
+            url: item.html_url,
+          })) || [],
+          total: data.total_count,
+          message: `Found ${data.total_count} code matches for "${query}"`,
+        };
+      }
+
+      case 'github_get_file': {
+        const owner = args.owner as string;
+        const repo = args.repo as string;
+        const path = args.path as string;
+        const branch = (args.branch as string) || 'main';
+        
+        const response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`,
+          { headers }
+        );
+        if (!response.ok) {
+          return { error: `File not found: ${path}` };
+        }
+        const data = await response.json();
+        
+        if (data.type !== 'file') {
+          return { error: `${path} is not a file` };
+        }
+        
+        // Decode base64 content
+        const content = atob(data.content.replace(/\n/g, ''));
+        return {
+          path: data.path,
+          name: data.name,
+          size: data.size,
+          content: content.substring(0, 5000), // Limit content size
+          truncated: content.length > 5000,
+          url: data.html_url,
+          message: `Retrieved file ${data.name} (${data.size} bytes)`,
+        };
+      }
+
+      case 'github_list_issues': {
+        const owner = args.owner as string;
+        const repo = args.repo as string;
+        const state = (args.state as string) || 'open';
+        
+        const response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/issues?state=${state}&per_page=15`,
+          { headers }
+        );
+        if (!response.ok) {
+          return { error: `Could not fetch issues for ${owner}/${repo}` };
+        }
+        const issues = await response.json();
+        return {
+          issues: issues.filter((i: any) => !i.pull_request).map((i: any) => ({
+            number: i.number,
+            title: i.title,
+            state: i.state,
+            author: i.user?.login,
+            labels: i.labels?.map((l: any) => l.name),
+            created: i.created_at,
+            url: i.html_url,
+          })),
+          total: issues.filter((i: any) => !i.pull_request).length,
+          message: `Found ${issues.filter((i: any) => !i.pull_request).length} ${state} issues`,
+        };
+      }
+
+      case 'github_list_pulls': {
+        const owner = args.owner as string;
+        const repo = args.repo as string;
+        const state = (args.state as string) || 'open';
+        
+        const response = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/pulls?state=${state}&per_page=15`,
+          { headers }
+        );
+        if (!response.ok) {
+          return { error: `Could not fetch PRs for ${owner}/${repo}` };
+        }
+        const prs = await response.json();
+        return {
+          pull_requests: prs.map((p: any) => ({
+            number: p.number,
+            title: p.title,
+            state: p.state,
+            author: p.user?.login,
+            branch: p.head?.ref,
+            target: p.base?.ref,
+            created: p.created_at,
+            url: p.html_url,
+          })),
+          total: prs.length,
+          message: `Found ${prs.length} ${state} pull requests`,
+        };
+      }
+
+      default:
+        return { error: `Unknown GitHub function: ${functionName}` };
+    }
+  } catch (error) {
+    console.error('GitHub execution error:', error);
+    return { error: error instanceof Error ? error.message : 'GitHub request failed' };
+  }
+}
+
 // Execute tool call
 async function executeTool(
   toolName: string,
@@ -780,6 +1121,10 @@ async function executeTool(
     return executeWhatsApp(toolName, args, source.config, supabaseUrl, supabaseKey);
   }
 
+  if (toolName.startsWith('github_')) {
+    return executeGitHub(toolName, args);
+  }
+
   return { error: `Unknown tool: ${toolName}` };
 }
 
@@ -801,6 +1146,7 @@ function buildSystemPrompt(connectedSources: ConnectedSource[]): string {
   const sourceNames = connectedSources.map(s => s.name).join(', ');
   const hasServiceNow = connectedSources.some(s => s.type === 'servicenow' || s.id === 'servicenow') || Deno.env.get('SERVICENOW_INSTANCE');
   const hasGoogleDrive = connectedSources.some(s => s.type === 'google-drive' || s.id === 'google-drive');
+  const hasGitHub = !!Deno.env.get('GITHUB_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'github' || s.id === 'github');
   
   return `You are NOVA, a friendly and intelligent AI assistant. You communicate naturally like a helpful colleague, not a robot.
 
@@ -821,12 +1167,14 @@ When mentioning incident or article IDs, ALWAYS shorten them to make them readab
 
 ## Connected Data Sources:
 ${connectedSources.length > 0 ? sourceNames : 'None connected yet'}
+${hasGitHub ? '+ GitHub (connected via token)' : ''}
 
 ## Your Capabilities:
 - **ServiceNow**: Search articles, get counts, manage incidents
 - **Google Drive**: List and search files
 - **Jira**: Search and retrieve issues
 - **WhatsApp**: Send messages via WhatsApp Business API
+- **GitHub**: List repos, search code, view files, list issues and PRs
 - **Documents**: Search uploaded files and knowledge bases
 
 ## CRITICAL: You MUST call functions when available. Never say "I can't" if a function exists.
@@ -865,7 +1213,18 @@ ${hasGoogleDrive ? `
 - "search for X" → google_drive_search_files
 ` : ''}
 
-${connectedSources.length === 0 ? `
+${hasGitHub ? `
+## GitHub Connected - Use These:
+- "list my repos" → github_list_repos
+- "show repo X" → github_get_repo
+- "search repos for X" → github_search_repos
+- "search code for X" → github_search_code
+- "get file X from repo Y" → github_get_file
+- "list issues in repo X" → github_list_issues
+- "list PRs in repo X" → github_list_pulls
+` : ''}
+
+${connectedSources.length === 0 && !hasGitHub ? `
 ## No Sources Yet:
 Friendly guide them: "Hey! To get started, head to Settings and connect your tools - ServiceNow, Jira, Google Drive, whatever you use. Then come back and I can help you search and manage everything!"
 ` : ''}`
@@ -874,6 +1233,7 @@ Friendly guide them: "Hey! To get started, head to Settings and connect your too
 // Filter tools based on connected sources
 function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABLE_TOOLS {
   const connectedTypes = new Set(connectedSources.map(s => s.type || s.id));
+  const hasGitHubToken = !!Deno.env.get('GITHUB_ACCESS_TOKEN');
   
   return AVAILABLE_TOOLS.filter(tool => {
     const name = tool.function.name;
@@ -894,7 +1254,17 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
       return connectedTypes.has('jira');
     }
     
-    // Document search - available if any document source connected (excluding Google Drive which has its own tools)
+    // GitHub tools - check env var
+    if (name.startsWith('github_')) {
+      return connectedTypes.has('github') || hasGitHubToken;
+    }
+    
+    // WhatsApp tools
+    if (name.startsWith('whatsapp_')) {
+      return connectedTypes.has('whatsapp');
+    }
+    
+    // Document search - available if any document source connected
     if (name === 'search_documents') {
       const docSources = ['file', 'confluence', 'notion', 'sharepoint'];
       return docSources.some(s => connectedTypes.has(s)) || connectedSources.length > 0;
