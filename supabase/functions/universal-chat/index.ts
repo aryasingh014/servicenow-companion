@@ -685,6 +685,50 @@ async function executeGoogleDrive(
     'Accept': 'application/json',
   };
 
+  const formatGoogleDriveError = (status: number, errorText: string) => {
+    let details: any = null;
+    try {
+      details = JSON.parse(errorText);
+    } catch {
+      // ignore
+    }
+
+    const gError = details?.error;
+    const message: string = gError?.message || errorText || `Google Drive API error: ${status}`;
+
+    const reason: string | undefined =
+      gError?.errors?.[0]?.reason ||
+      gError?.details?.find((d: any) => typeof d?.reason === 'string')?.reason ||
+      gError?.details?.[0]?.reason;
+
+    const activationUrl: string | undefined = gError?.details?.find(
+      (d: any) => d?.metadata?.activationUrl
+    )?.metadata?.activationUrl;
+
+    // Common: API disabled on the Google Cloud project tied to the OAuth client
+    if (
+      reason === 'accessNotConfigured' ||
+      reason === 'SERVICE_DISABLED' ||
+      /API has not been used|is disabled|Enable it by visiting/i.test(message)
+    ) {
+      return {
+        error: 'Google Drive API is disabled for your Google Cloud project. Enable Google Drive API and retry.',
+        activationUrl,
+        status,
+      };
+    }
+
+    // Common: missing OAuth scopes
+    if (reason === 'insufficientPermissions' || /insufficient.*scope|permission/i.test(message)) {
+      return {
+        error: 'Google Drive permission denied. Ensure the token includes Google Drive scopes (e.g., drive.readonly) and retry.',
+        status,
+      };
+    }
+
+    return { error: message, status };
+  };
+
   try {
     console.log(`Executing Google Drive: ${functionName}`, args);
 
@@ -698,9 +742,9 @@ async function executeGoogleDrive(
         
         const response = await fetch(url, { headers });
         if (!response.ok) {
-          const error = await response.text();
-          console.error('Google Drive list error:', response.status, error);
-          return { error: `Google Drive API error: ${response.status}` };
+          const errorText = await response.text();
+          console.error('Google Drive list error:', response.status, errorText);
+          return formatGoogleDriveError(response.status, errorText);
         }
         
         const data = await response.json();
@@ -731,9 +775,9 @@ async function executeGoogleDrive(
         
         const response = await fetch(url, { headers });
         if (!response.ok) {
-          const error = await response.text();
-          console.error('Google Drive search error:', response.status, error);
-          return { error: `Google Drive API error: ${response.status}` };
+          const errorText = await response.text();
+          console.error('Google Drive search error:', response.status, errorText);
+          return formatGoogleDriveError(response.status, errorText);
         }
         
         const data = await response.json();
@@ -766,9 +810,9 @@ async function executeGoogleDrive(
         );
         
         if (!metaResponse.ok) {
-          const error = await metaResponse.text();
-          console.error('Google Drive metadata error:', metaResponse.status, error);
-          return { error: `Could not access file: ${metaResponse.status}` };
+          const errorText = await metaResponse.text();
+          console.error('Google Drive metadata error:', metaResponse.status, errorText);
+          return formatGoogleDriveError(metaResponse.status, errorText);
         }
         
         const metadata = await metaResponse.json();
@@ -788,9 +832,9 @@ async function executeGoogleDrive(
           );
           
           if (!exportResponse.ok) {
-            const error = await exportResponse.text();
-            console.error('Google Drive export error:', exportResponse.status, error);
-            return { error: `Could not export file: ${exportResponse.status}` };
+            const errorText = await exportResponse.text();
+            console.error('Google Drive export error:', exportResponse.status, errorText);
+            return formatGoogleDriveError(exportResponse.status, errorText);
           }
           
           content = await exportResponse.text();
@@ -802,9 +846,9 @@ async function executeGoogleDrive(
           );
           
           if (!downloadResponse.ok) {
-            const error = await downloadResponse.text();
-            console.error('Google Drive download error:', downloadResponse.status, error);
-            return { error: `Could not download file: ${downloadResponse.status}` };
+            const errorText = await downloadResponse.text();
+            console.error('Google Drive download error:', downloadResponse.status, errorText);
+            return formatGoogleDriveError(downloadResponse.status, errorText);
           }
           
           content = await downloadResponse.text();
