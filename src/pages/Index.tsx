@@ -1,11 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle } from "lucide-react";
+import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
 import { ChatMessage } from "@/components/ChatMessage";
 import { QuickActions } from "@/components/QuickActions";
+import { VoiceSelector } from "@/components/VoiceSelector";
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useConversation } from "@/hooks/useConversation";
@@ -41,7 +42,17 @@ const Index = () => {
     isSupported: voiceSupported,
   } = useVoiceRecognition();
 
-  const { isSpeaking, speak, stop: stopSpeaking, isSupported: ttsSupported } = useTextToSpeech();
+  const { 
+    isSpeaking, 
+    speak, 
+    stop: stopSpeaking, 
+    isSupported: ttsSupported,
+    isLoading: ttsLoading,
+    selectedVoice,
+    setSelectedVoice,
+    customVoices,
+    addCustomVoice,
+  } = useTextToSpeech();
 
   // Check connected sources on mount
   useEffect(() => {
@@ -202,24 +213,43 @@ const Index = () => {
               </p>
             )}
 
-            <motion.button
-              onClick={handleVoiceToggle}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mt-4"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {voiceEnabled ? (
-                <>
-                  <Volume2 className="w-4 h-4" />
-                  <span>Voice responses on</span>
-                </>
-              ) : (
-                <>
-                  <VolumeX className="w-4 h-4" />
-                  <span>Voice responses off</span>
-                </>
+            {/* Voice controls */}
+            <div className="flex items-center gap-4 mt-4">
+              <motion.button
+                onClick={handleVoiceToggle}
+                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {voiceEnabled ? (
+                  <>
+                    <Volume2 className="w-4 h-4" />
+                    <span>On</span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-4 h-4" />
+                    <span>Off</span>
+                  </>
+                )}
+              </motion.button>
+
+              {voiceEnabled && (
+                <VoiceSelector
+                  selectedVoice={selectedVoice}
+                  onVoiceChange={setSelectedVoice}
+                  customVoices={customVoices}
+                  onAddCustomVoice={addCustomVoice}
+                />
               )}
-            </motion.button>
+
+              {ttsLoading && (
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Loading voice...</span>
+                </div>
+              )}
+            </div>
 
             {/* Connected Sources */}
             {connectedSources.length > 0 && (
