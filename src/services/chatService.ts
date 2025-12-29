@@ -17,6 +17,21 @@ export async function streamChat({
     // Get connected sources for the universal chat
     const connectedSources = getConnectedSources();
     
+    // Filter out any OAuth sources that don't have a valid accessToken
+    const oauthConnectorIds = ['google-drive', 'email', 'calendar'];
+    const validSources = connectedSources.filter(s => {
+      if (oauthConnectorIds.includes(s.id)) {
+        // OAuth connectors must have accessToken
+        if (!s.config?.accessToken) {
+          console.warn(`Skipping ${s.id} - no valid accessToken`);
+          return false;
+        }
+      }
+      return true;
+    });
+    
+    console.log('Sending sources to chat:', validSources.map(s => ({ id: s.id, hasToken: !!s.config?.accessToken })));
+    
     console.time('chatStreamAPI');
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/universal-chat`,
@@ -28,7 +43,7 @@ export async function streamChat({
         },
         body: JSON.stringify({ 
           messages, 
-          connectedSources: connectedSources.map(s => ({
+          connectedSources: validSources.map(s => ({
             id: s.id,
             name: s.name,
             type: s.type,
