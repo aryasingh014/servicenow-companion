@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { VoiceOption, DEFAULT_VOICES } from "@/components/VoiceSelector";
+import { toast } from "sonner";
 
 interface UseTextToSpeechReturn {
   isSpeaking: boolean;
@@ -11,14 +12,20 @@ interface UseTextToSpeechReturn {
   setSelectedVoice: (voice: VoiceOption) => void;
   customVoices: VoiceOption[];
   addCustomVoice: (voice: VoiceOption) => void;
+  isElevenLabsDisabled: boolean;
 }
 
 const STORAGE_KEY_VOICE = 'elevenlabs-selected-voice';
 const STORAGE_KEY_CUSTOM = 'elevenlabs-custom-voices';
 
+const STORAGE_KEY_ELEVENLABS_DISABLED = 'elevenlabs-disabled';
+
 export const useTextToSpeech = (): UseTextToSpeechReturn => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isElevenLabsDisabled, setIsElevenLabsDisabled] = useState(() => {
+    return localStorage.getItem(STORAGE_KEY_ELEVENLABS_DISABLED) === 'true';
+  });
   const [selectedVoice, setSelectedVoiceState] = useState<VoiceOption>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_VOICE);
     if (saved) {
@@ -72,6 +79,13 @@ export const useTextToSpeech = (): UseTextToSpeechReturn => {
       abortControllerRef.current.abort();
     }
 
+    // If ElevenLabs is disabled, go straight to browser TTS
+    if (isElevenLabsDisabled) {
+      console.log('[TTS] ElevenLabs disabled, using browser TTS');
+      fallbackToWebSpeech(text);
+      return;
+    }
+
     setIsLoading(true);
     abortControllerRef.current = new AbortController();
 
@@ -98,6 +112,20 @@ export const useTextToSpeech = (): UseTextToSpeechReturn => {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error('[TTS] Error response:', errorData);
+        
+        // Handle quota exceeded - disable ElevenLabs and switch to browser TTS
+        if (response.status === 402 || errorData.code === 'QUOTA_EXCEEDED') {
+          console.log('[TTS] ElevenLabs quota exceeded, switching to browser TTS');
+          setIsElevenLabsDisabled(true);
+          localStorage.setItem(STORAGE_KEY_ELEVENLABS_DISABLED, 'true');
+          toast.warning('ElevenLabs voice credits exhausted. Using browser voice instead.', {
+            duration: 5000,
+          });
+          setIsLoading(false);
+          fallbackToWebSpeech(text);
+          return;
+        }
+        
         throw new Error(errorData.error || `TTS request failed: ${response.status}`);
       }
 
@@ -200,5 +228,6 @@ export const useTextToSpeech = (): UseTextToSpeechReturn => {
     setSelectedVoice,
     customVoices,
     addCustomVoice,
+    isElevenLabsDisabled,
   };
 };
