@@ -346,6 +346,48 @@ const AVAILABLE_TOOLS = [
         required: ["owner", "repo"]
       }
     }
+  },
+  // Gmail tools
+  {
+    type: "function",
+    function: {
+      name: "gmail_list_emails",
+      description: "List recent emails from Gmail. Use when user asks to list, show, or see their emails.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Max emails to return (default 10)" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "gmail_search_emails",
+      description: "Search Gmail emails by query. Use when user asks to search or find emails.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query (e.g., 'from:john', 'subject:meeting', 'is:unread')" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "gmail_get_email",
+      description: "Get the full content of a specific email by ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          email_id: { type: "string", description: "The Gmail message ID" }
+        },
+        required: ["email_id"]
+      }
+    }
   }
 ];
 
@@ -1191,6 +1233,172 @@ async function executeGitHub(
   }
 }
 
+// Execute Gmail function
+async function executeGmail(
+  functionName: string,
+  args: Record<string, unknown>,
+  config: Record<string, string>
+): Promise<unknown> {
+  const accessToken = config.accessToken || Deno.env.get('GMAIL_ACCESS_TOKEN');
+  
+  if (!accessToken) {
+    return { error: "Gmail not connected. Please add your Gmail access token." };
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+  };
+
+  try {
+    switch (functionName) {
+      case 'gmail_list_emails': {
+        const limit = (args.limit as number) || 10;
+        
+        const response = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}`,
+          { headers }
+        );
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Gmail list error:', response.status, errorText);
+          if (response.status === 401) {
+            return { error: "Gmail authentication expired. Please reconnect Gmail." };
+          }
+          return { error: `Gmail API error: ${response.status}` };
+        }
+        
+        const data = await response.json();
+        const messageIds = data.messages || [];
+        
+        const emails = [];
+        for (const msg of messageIds.slice(0, limit)) {
+          try {
+            const msgResp = await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+              { headers }
+            );
+            if (!msgResp.ok) continue;
+            
+            const msgData = await msgResp.json();
+            const hdrs = msgData.payload?.headers || [];
+            const getHeader = (name: string) => hdrs.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+            
+            emails.push({
+              id: msg.id,
+              subject: getHeader('Subject') || '(No Subject)',
+              from: getHeader('From'),
+              date: getHeader('Date'),
+              snippet: msgData.snippet || '',
+            });
+          } catch { }
+        }
+        
+        return {
+          emails,
+          total: emails.length,
+          message: `Found ${emails.length} recent emails`,
+        };
+      }
+
+      case 'gmail_search_emails': {
+        const query = args.query as string;
+        if (!query) return { error: "Search query is required" };
+        
+        const response = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=15`,
+          { headers }
+        );
+        
+        if (!response.ok) {
+          return { error: `Gmail search failed: ${response.status}` };
+        }
+        
+        const data = await response.json();
+        const messageIds = data.messages || [];
+        
+        const emails = [];
+        for (const msg of messageIds.slice(0, 15)) {
+          try {
+            const msgResp = await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+              { headers }
+            );
+            if (!msgResp.ok) continue;
+            
+            const msgData = await msgResp.json();
+            const hdrs = msgData.payload?.headers || [];
+            const getHeader = (name: string) => hdrs.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+            
+            emails.push({
+              id: msg.id,
+              subject: getHeader('Subject') || '(No Subject)',
+              from: getHeader('From'),
+              date: getHeader('Date'),
+              snippet: msgData.snippet || '',
+            });
+          } catch { }
+        }
+        
+        return {
+          query,
+          emails,
+          total: emails.length,
+          message: `Found ${emails.length} emails matching "${query}"`,
+        };
+      }
+
+      case 'gmail_get_email': {
+        const emailId = args.email_id as string;
+        if (!emailId) return { error: "Email ID is required" };
+        
+        const response = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${emailId}?format=full`,
+          { headers }
+        );
+        
+        if (!response.ok) {
+          return { error: `Could not fetch email: ${response.status}` };
+        }
+        
+        const msgData = await response.json();
+        const hdrs = msgData.payload?.headers || [];
+        const getHeader = (name: string) => hdrs.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+        
+        // Extract body
+        let body = '';
+        const payload = msgData.payload;
+        if (payload?.body?.data) {
+          body = atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+        } else if (payload?.parts) {
+          for (const part of payload.parts) {
+            if (part.mimeType === 'text/plain' && part.body?.data) {
+              body = atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+              break;
+            }
+          }
+        }
+        
+        return {
+          id: emailId,
+          subject: getHeader('Subject') || '(No Subject)',
+          from: getHeader('From'),
+          to: getHeader('To'),
+          date: getHeader('Date'),
+          body: body.substring(0, 5000),
+          snippet: msgData.snippet || '',
+        };
+      }
+
+      default:
+        return { error: `Unknown Gmail function: ${functionName}` };
+    }
+  } catch (error) {
+    console.error('Gmail execution error:', error);
+    return { error: error instanceof Error ? error.message : 'Gmail request failed' };
+  }
+}
+
 // Execute tool call
 async function executeTool(
   toolName: string,
@@ -1245,6 +1453,11 @@ async function executeTool(
     return executeGitHub(toolName, args);
   }
 
+  if (toolName.startsWith('gmail_')) {
+    const source = connectedSources.find(s => s.type === 'email' || s.id === 'email');
+    return executeGmail(toolName, args, source?.config || {});
+  }
+
   return { error: `Unknown tool: ${toolName}` };
 }
 
@@ -1267,6 +1480,7 @@ function buildSystemPrompt(connectedSources: ConnectedSource[]): string {
   const hasServiceNow = connectedSources.some(s => s.type === 'servicenow' || s.id === 'servicenow') || Deno.env.get('SERVICENOW_INSTANCE');
   const hasGoogleDrive = !!Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'google-drive' || s.id === 'google-drive');
   const hasGitHub = !!Deno.env.get('GITHUB_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'github' || s.id === 'github');
+  const hasGmail = !!Deno.env.get('GMAIL_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'email' || s.id === 'email');
   
   return `You are NOVA, a friendly and intelligent AI assistant. You communicate naturally like a helpful colleague, not a robot.
 
@@ -1288,10 +1502,12 @@ When mentioning incident or article IDs, ALWAYS shorten them to make them readab
 ## Connected Data Sources:
 ${connectedSources.length > 0 ? sourceNames : 'None connected yet'}
 ${hasGitHub ? '+ GitHub (connected via token)' : ''}
+${hasGmail ? '+ Gmail (connected via token)' : ''}
 
 ## Your Capabilities:
 - **ServiceNow**: Search articles, get counts, manage incidents
 - **Google Drive**: List and search files
+- **Gmail**: List, search, and read emails
 - **Jira**: Search and retrieve issues
 - **WhatsApp**: Send messages via WhatsApp Business API
 - **GitHub**: List repos, search code, view files, list issues and PRs
@@ -1344,7 +1560,14 @@ ${hasGitHub ? `
 - "list PRs in repo X" → github_list_pulls
 ` : ''}
 
-${connectedSources.length === 0 && !hasGitHub ? `
+${hasGmail ? `
+## Gmail Connected - Use These:
+- "list my emails" → gmail_list_emails
+- "search emails for X" → gmail_search_emails
+- "show email" → gmail_get_email
+` : ''}
+
+${connectedSources.length === 0 && !hasGitHub && !hasGmail ? `
 ## No Sources Yet:
 Friendly guide them: "Hey! To get started, head to Settings and connect your tools - ServiceNow, Jira, Google Drive, whatever you use. Then come back and I can help you search and manage everything!"
 ` : ''}`
@@ -1354,6 +1577,7 @@ Friendly guide them: "Hey! To get started, head to Settings and connect your too
 function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABLE_TOOLS {
   const connectedTypes = new Set(connectedSources.map(s => s.type || s.id));
   const hasGitHubToken = !!Deno.env.get('GITHUB_ACCESS_TOKEN');
+  const hasGmailToken = !!Deno.env.get('GMAIL_ACCESS_TOKEN');
   
   return AVAILABLE_TOOLS.filter(tool => {
     const name = tool.function.name;
@@ -1383,6 +1607,11 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
     // WhatsApp tools
     if (name.startsWith('whatsapp_')) {
       return connectedTypes.has('whatsapp');
+    }
+    
+    // Gmail tools - check env var
+    if (name.startsWith('gmail_')) {
+      return connectedTypes.has('email') || hasGmailToken;
     }
     
     // Document search - available if any document source connected
