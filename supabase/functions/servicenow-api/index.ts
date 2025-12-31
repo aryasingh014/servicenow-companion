@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 interface ServiceNowRequest {
-  action: 'getArticleCount' | 'getIncidentCount' | 'getCatalogItemCount' | 'getArticle' | 'getIncident' | 'createIncident' | 'searchArticles' | 'getCatalogItems' | 'testKnowledgeArticles';
+  action: 'getArticleCount' | 'getIncidentCount' | 'getCatalogItemCount' | 'getArticle' | 'getIncident' | 'createIncident' | 'updateIncident' | 'searchArticles' | 'getCatalogItems' | 'testKnowledgeArticles';
   params?: Record<string, unknown>;
 }
 
@@ -88,6 +88,64 @@ serve(async (req) => {
 
       case 'getCatalogItems':
         endpoint = '/api/now/table/sc_cat_item?sysparm_fields=sys_id,name,short_description,category&sysparm_limit=20';
+        break;
+
+      case 'updateIncident':
+        const incidentSysId = params?.sys_id as string;
+        const incidentNumberToUpdate = params?.number as string;
+        
+        // If we have a number but no sys_id, first fetch the sys_id
+        if (!incidentSysId && incidentNumberToUpdate) {
+          console.log(`🔍 Looking up sys_id for incident: ${incidentNumberToUpdate}`);
+          const lookupEndpoint = `/api/now/table/incident?sysparm_query=number=${incidentNumberToUpdate}&sysparm_fields=sys_id&sysparm_limit=1`;
+          
+          const lookupResponse = await fetch(`${baseUrl}${lookupEndpoint}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          });
+          
+          if (!lookupResponse.ok) {
+            throw new Error(`Failed to look up incident ${incidentNumberToUpdate}`);
+          }
+          
+          const lookupData = await lookupResponse.json();
+          const foundSysId = lookupData.result?.[0]?.sys_id;
+          
+          if (!foundSysId) {
+            throw new Error(`Incident ${incidentNumberToUpdate} not found`);
+          }
+          
+          endpoint = `/api/now/table/incident/${foundSysId}`;
+        } else if (incidentSysId) {
+          endpoint = `/api/now/table/incident/${incidentSysId}`;
+        } else {
+          throw new Error('Either sys_id or number is required to update an incident');
+        }
+        
+        method = 'PATCH';
+        
+        // Build update payload - only include fields that are provided
+        const updatePayload: Record<string, unknown> = {};
+        if (params?.short_description) updatePayload.short_description = params.short_description;
+        if (params?.description) updatePayload.description = params.description;
+        if (params?.state) updatePayload.state = params.state;
+        if (params?.urgency) updatePayload.urgency = params.urgency;
+        if (params?.impact) updatePayload.impact = params.impact;
+        if (params?.priority) updatePayload.priority = params.priority;
+        if (params?.category) updatePayload.category = params.category;
+        if (params?.assignment_group) updatePayload.assignment_group = params.assignment_group;
+        if (params?.assigned_to) updatePayload.assigned_to = params.assigned_to;
+        if (params?.close_code) updatePayload.close_code = params.close_code;
+        if (params?.close_notes) updatePayload.close_notes = params.close_notes;
+        if (params?.work_notes) updatePayload.work_notes = params.work_notes;
+        if (params?.comments) updatePayload.comments = params.comments;
+        
+        body = JSON.stringify(updatePayload);
+        console.log('📝 Updating incident with data:', updatePayload);
         break;
 
       case 'testKnowledgeArticles':
@@ -189,8 +247,8 @@ serve(async (req) => {
 
     const data = await response.json();
     
-    // Enhanced logging for incident creation
-    if (action === 'createIncident') {
+    // Enhanced logging for incident creation and update
+    if (action === 'createIncident' || action === 'updateIncident') {
       console.log('✅ Incident creation response:', {
         number: data?.result?.number,
         sys_id: data?.result?.sys_id,

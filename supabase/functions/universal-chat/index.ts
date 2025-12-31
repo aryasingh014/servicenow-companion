@@ -178,6 +178,28 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "servicenow_update_incident",
+      description: "Update an existing ServiceNow incident. Use when user wants to update, modify, change status, resolve, close, or add notes to an incident.",
+      parameters: {
+        type: "object",
+        properties: {
+          incident_number: { type: "string", description: "Incident number like INC0012345" },
+          short_description: { type: "string", description: "Updated brief description" },
+          description: { type: "string", description: "Updated detailed description" },
+          state: { type: "string", enum: ["1", "2", "3", "6", "7", "8"], description: "1=New, 2=In Progress, 3=On Hold, 6=Resolved, 7=Closed, 8=Canceled" },
+          urgency: { type: "string", enum: ["1", "2", "3"], description: "1=High, 2=Medium, 3=Low" },
+          impact: { type: "string", enum: ["1", "2", "3"], description: "1=High, 2=Medium, 3=Low" },
+          work_notes: { type: "string", description: "Internal work notes to add" },
+          comments: { type: "string", description: "Customer-visible comments to add" },
+          close_notes: { type: "string", description: "Resolution notes (required when resolving/closing)" }
+        },
+        required: ["incident_number"]
+      }
+    }
+  },
   // Google Drive tools
   {
     type: "function",
@@ -518,6 +540,41 @@ async function executeServiceNow(
         });
         break;
 
+      case 'servicenow_update_incident': {
+        const incidentNum = args.incident_number as string;
+        // First lookup the sys_id
+        const lookupUrl = `${baseUrl}/api/now/table/incident?sysparm_query=number=${incidentNum}&sysparm_fields=sys_id&sysparm_limit=1`;
+        const lookupHeaders = {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        };
+        const lookupResp = await fetch(lookupUrl, { method: 'GET', headers: lookupHeaders });
+        if (!lookupResp.ok) {
+          return { error: `Failed to find incident ${incidentNum}` };
+        }
+        const lookupData = await lookupResp.json();
+        const sysId = lookupData.result?.[0]?.sys_id;
+        if (!sysId) {
+          return { error: `Incident ${incidentNum} not found` };
+        }
+        
+        endpoint = `/api/now/table/incident/${sysId}`;
+        method = 'PATCH';
+        const updatePayload: Record<string, unknown> = {};
+        if (args.short_description) updatePayload.short_description = args.short_description;
+        if (args.description) updatePayload.description = args.description;
+        if (args.state) updatePayload.state = args.state;
+        if (args.urgency) updatePayload.urgency = args.urgency;
+        if (args.impact) updatePayload.impact = args.impact;
+        if (args.work_notes) updatePayload.work_notes = args.work_notes;
+        if (args.comments) updatePayload.comments = args.comments;
+        if (args.close_notes) updatePayload.close_notes = args.close_notes;
+        body = JSON.stringify(updatePayload);
+        console.log(`Updating incident ${incidentNum} (${sysId}):`, updatePayload);
+        break;
+      }
+
       case 'servicenow_get_article_count': {
         // Try stats API first
         try {
@@ -698,6 +755,18 @@ async function executeServiceNow(
         number: incident.number,
         sys_id: incident.sys_id,
         message: `Incident ${incident.number} created successfully`,
+      };
+    }
+
+    if (functionName === 'servicenow_update_incident' && data?.result) {
+      const incident = Array.isArray(data.result) ? data.result[0] : data.result;
+      const stateMap: Record<string, string> = { '1': 'New', '2': 'In Progress', '3': 'On Hold', '6': 'Resolved', '7': 'Closed', '8': 'Canceled' };
+      return {
+        success: true,
+        number: incident.number,
+        sys_id: incident.sys_id,
+        state: stateMap[incident.state] || incident.state,
+        message: `Incident ${incident.number} updated successfully. Current state: ${stateMap[incident.state] || incident.state}`,
       };
     }
     

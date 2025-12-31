@@ -1,381 +1,184 @@
-import { useState, useRef } from "react";
-import { motion } from "framer-motion";
-import { Upload, Mic, Play, Trash2, Check, Loader2, Info } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { Volume2, Play, Settings2 } from "lucide-react";
 
-interface VoiceCloneSettingsProps {
-  voiceSampleUrl: string | null;
+interface VoiceSettings {
   voiceName: string;
   language: string;
-  onVoiceSampleChange: (url: string | null, name?: string) => void;
-  onLanguageChange: (language: string) => void;
+  pitch: number;
+  rate: number;
+  selectedVoiceURI: string | null;
 }
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'pl', name: 'Polish' },
-  { code: 'tr', name: 'Turkish' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'nl', name: 'Dutch' },
-  { code: 'cs', name: 'Czech' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'zh', name: 'Chinese' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'hu', name: 'Hungarian' },
-];
-
-const PRESET_VOICES = [
-  { name: 'Default Male', url: 'https://replicate.delivery/pbxt/Jt79w0xsT64R1JsiJ0LQRL8UcWspg5J4RFrU6YwEKpOT1ukS/male.wav' },
-  { name: 'Default Female', url: 'https://replicate.delivery/pbxt/JxH0ECDP8Sx6gIAmGZ0QRpHWBHbXz4TdBDZI2t9KQNr4yPkE/female.wav' },
-];
+interface VoiceCloneSettingsProps {
+  voiceSettings: VoiceSettings;
+  availableVoices: SpeechSynthesisVoice[];
+  onVoiceChange: (voiceURI: string, name: string) => void;
+  onPitchChange: (pitch: number) => void;
+  onRateChange: (rate: number) => void;
+  onTestVoice: () => void;
+  isSpeaking: boolean;
+}
 
 export const VoiceCloneSettings = ({
-  voiceSampleUrl,
-  voiceName,
-  language,
-  onVoiceSampleChange,
-  onLanguageChange,
+  voiceSettings,
+  availableVoices,
+  onVoiceChange,
+  onPitchChange,
+  onRateChange,
+  onTestVoice,
+  isSpeaking,
 }: VoiceCloneSettingsProps) => {
-  const [isUploading, setIsUploading] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingIntervalRef = useRef<number | null>(null);
-  const { toast } = useToast();
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('audio/')) {
-      toast({
-        variant: "destructive",
-        title: "Invalid file type",
-        description: "Please upload an audio file (MP3, WAV, etc.)",
-      });
-      return;
-    }
-
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast({
-        variant: "destructive",
-        title: "File too large",
-        description: "Please upload an audio file under 10MB",
-      });
-      return;
-    }
-
-    setIsUploading(true);
-
-    try {
-      // Upload to Supabase Storage
-      const fileName = `voice-samples/${Date.now()}-${file.name}`;
-      const { data, error } = await supabase.storage
-        .from('voice-samples')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (error) {
-        // If bucket doesn't exist, use a public URL workaround
-        console.warn('Storage upload failed, using data URL:', error);
-        
-        // Convert to base64 data URL as fallback
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          onVoiceSampleChange(dataUrl, file.name.replace(/\.[^/.]+$/, ''));
-          toast({
-            title: "Voice sample loaded",
-            description: "Your voice will be used for responses",
-          });
-        };
-        reader.readAsDataURL(file);
-        return;
-      }
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from('voice-samples')
-        .getPublicUrl(fileName);
-
-      onVoiceSampleChange(publicUrlData.publicUrl, file.name.replace(/\.[^/.]+$/, ''));
-      toast({
-        title: "Voice sample uploaded",
-        description: "Your voice will be used for responses",
-      });
-    } catch (err) {
-      console.error('Upload error:', err);
-      toast({
-        variant: "destructive",
-        title: "Upload failed",
-        description: "Could not upload voice sample",
-      });
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        
-        // Convert to data URL
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          onVoiceSampleChange(dataUrl, 'Recorded Voice');
-          toast({
-            title: "Voice recorded",
-            description: "Your voice will be used for responses",
-          });
-        };
-        reader.readAsDataURL(audioBlob);
-
-        // Stop all tracks
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-
-      // Update recording time
-      recordingIntervalRef.current = window.setInterval(() => {
-        setRecordingTime(prev => {
-          if (prev >= 30) {
-            stopRecording();
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-
-    } catch (err) {
-      console.error('Recording error:', err);
-      toast({
-        variant: "destructive",
-        title: "Recording failed",
-        description: "Could not access microphone",
-      });
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-        recordingIntervalRef.current = null;
-      }
-    }
-  };
-
-  const playVoiceSample = () => {
-    if (!voiceSampleUrl) return;
-    
-    setIsPlaying(true);
-    const audio = new Audio(voiceSampleUrl);
-    audio.onended = () => setIsPlaying(false);
-    audio.onerror = () => {
-      setIsPlaying(false);
-      toast({
-        variant: "destructive",
-        title: "Playback failed",
-        description: "Could not play voice sample",
-      });
-    };
-    audio.play();
-  };
-
-  const clearVoiceSample = () => {
-    onVoiceSampleChange(null);
-    toast({
-      title: "Voice sample removed",
-      description: "Using default assistant voice",
-    });
-  };
+  // Get English voices first, then others
+  const englishVoices = availableVoices.filter(v => v.lang.startsWith('en'));
+  const otherVoices = availableVoices.filter(v => !v.lang.startsWith('en'));
 
   return (
-    <Card className="border-border/50">
+    <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Mic className="w-5 h-5" />
-          Voice Cloning
+          <Volume2 className="w-5 h-5" />
+          Voice Settings
         </CardTitle>
         <CardDescription>
-          Clone any voice from a short audio sample. The assistant will speak in your chosen voice.
+          Configure the assistant's voice for natural speech output
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Current Voice */}
-        <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 border border-border/50">
-          <div>
-            <p className="font-medium">{voiceName}</p>
-            <p className="text-sm text-muted-foreground">
-              {voiceSampleUrl ? 'Custom voice active' : 'Using default voice'}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {voiceSampleUrl && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={playVoiceSample}
-                  disabled={isPlaying}
-                >
-                  {isPlaying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={clearVoiceSample}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Upload Options */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* File Upload */}
-          <div className="space-y-2">
-            <Label>Upload Audio File</Label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4 mr-2" />
-              )}
-              {isUploading ? 'Uploading...' : 'Upload Audio'}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              MP3, WAV, or other audio formats (max 10MB)
-            </p>
-          </div>
-
-          {/* Record Voice */}
-          <div className="space-y-2">
-            <Label>Record Your Voice</Label>
-            <Button
-              variant={isRecording ? "destructive" : "outline"}
-              className="w-full"
-              onClick={isRecording ? stopRecording : startRecording}
-            >
-              {isRecording ? (
-                <>
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse mr-2" />
-                  Stop ({30 - recordingTime}s)
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4 mr-2" />
-                  Record Voice
-                </>
-              )}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Record 5-30 seconds for best results
-            </p>
-          </div>
-        </div>
-
-        {/* Preset Voices */}
+        {/* Voice Selection */}
         <div className="space-y-2">
-          <Label>Preset Voices</Label>
-          <div className="flex gap-2">
-            {PRESET_VOICES.map((voice) => (
-              <Button
-                key={voice.name}
-                variant={voiceSampleUrl === voice.url ? "default" : "outline"}
-                size="sm"
-                onClick={() => onVoiceSampleChange(voice.url, voice.name)}
-              >
-                {voiceSampleUrl === voice.url && <Check className="w-3 h-3 mr-1" />}
-                {voice.name}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {/* Language Selection */}
-        <div className="space-y-2">
-          <Label>Language</Label>
-          <Select value={language} onValueChange={onLanguageChange}>
+          <Label>Voice</Label>
+          <Select
+            value={voiceSettings.selectedVoiceURI || ''}
+            onValueChange={(value) => {
+              const voice = availableVoices.find(v => v.voiceURI === value);
+              if (voice) {
+                onVoiceChange(voice.voiceURI, voice.name);
+              }
+            }}
+          >
             <SelectTrigger>
-              <SelectValue />
+              <SelectValue placeholder="Select a voice">
+                {voiceSettings.voiceName || 'Select a voice'}
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
-              {SUPPORTED_LANGUAGES.map((lang) => (
-                <SelectItem key={lang.code} value={lang.code}>
-                  {lang.name}
-                </SelectItem>
-              ))}
+            <SelectContent className="max-h-[300px]">
+              {englishVoices.length > 0 && (
+                <>
+                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                    English Voices
+                  </div>
+                  {englishVoices.map((voice) => (
+                    <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                      <div className="flex items-center gap-2">
+                        <span>{voice.name}</span>
+                        <span className="text-xs text-muted-foreground">({voice.lang})</span>
+                        {(voice.name.includes('Natural') || voice.name.includes('Premium') || voice.name.includes('Enhanced')) && (
+                          <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">Premium</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </>
+              )}
+              {otherVoices.length > 0 && (
+                <>
+                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">
+                    Other Languages
+                  </div>
+                  {otherVoices.map((voice) => (
+                    <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                      <div className="flex items-center gap-2">
+                        <span>{voice.name}</span>
+                        <span className="text-xs text-muted-foreground">({voice.lang})</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </>
+              )}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            The language the assistant will speak in
+            Available voices depend on your browser and operating system
           </p>
         </div>
 
-        {/* Info */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
-          <Info className="w-4 h-4 mt-0.5 text-primary" />
-          <div className="text-sm">
-            <p className="font-medium text-primary">How Voice Cloning Works</p>
-            <p className="text-muted-foreground mt-1">
-              Upload a clear audio sample (5-30 seconds) of any voice. The AI will learn the voice characteristics and use them when speaking responses. Works best with clear speech without background noise.
-            </p>
+        {/* Test Voice Button */}
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={onTestVoice}
+          disabled={isSpeaking}
+        >
+          <Play className="w-4 h-4 mr-2" />
+          {isSpeaking ? 'Speaking...' : 'Test Voice'}
+        </Button>
+
+        {/* Advanced Settings Toggle */}
+        <Button
+          variant="ghost"
+          className="w-full justify-start text-muted-foreground"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+        >
+          <Settings2 className="w-4 h-4 mr-2" />
+          {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+        </Button>
+
+        {showAdvanced && (
+          <div className="space-y-6 pt-2 border-t">
+            {/* Pitch Control */}
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <Label>Pitch</Label>
+                <span className="text-sm text-muted-foreground">{voiceSettings.pitch.toFixed(1)}</span>
+              </div>
+              <Slider
+                value={[voiceSettings.pitch]}
+                onValueChange={([value]) => onPitchChange(value)}
+                min={0.5}
+                max={2}
+                step={0.1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Adjust the voice pitch (0.5 = low, 2 = high)
+              </p>
+            </div>
+
+            {/* Rate Control */}
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <Label>Speed</Label>
+                <span className="text-sm text-muted-foreground">{voiceSettings.rate.toFixed(1)}x</span>
+              </div>
+              <Slider
+                value={[voiceSettings.rate]}
+                onValueChange={([value]) => onRateChange(value)}
+                min={0.5}
+                max={2}
+                step={0.1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Adjust the speaking speed (0.5 = slow, 2 = fast)
+              </p>
+            </div>
           </div>
+        )}
+
+        {/* Info Box */}
+        <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+          <h4 className="font-medium text-sm">💡 Tips for Best Experience</h4>
+          <ul className="text-xs text-muted-foreground space-y-1">
+            <li>• Chrome and Edge offer the most natural-sounding voices</li>
+            <li>• Look for voices marked "Natural" or "Premium" for best quality</li>
+            <li>• macOS users have access to high-quality Siri voices</li>
+            <li>• Voice availability varies by browser and operating system</li>
+          </ul>
         </div>
       </CardContent>
     </Card>
