@@ -24,5 +24,8 @@ verify_jwt = false
 [functions.email-connector]
 verify_jwt = false
 
+[functions.voice-clone-tts]
+verify_jwt = false
+
 [functions.elevenlabs-tts]
 verify_jwt = false

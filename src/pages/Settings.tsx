@@ -1,15 +1,17 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2 } from "lucide-react";
+import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2, Volume2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { ConnectorCard } from "@/components/ConnectorCard";
 import { ConnectorConfigDialog } from "@/components/ConnectorConfigDialog";
+import { VoiceCloneSettings } from "@/components/VoiceCloneSettings";
 import { connectors as defaultConnectors, connectorCategories } from "@/data/connectors";
 import { Connector, ConnectorConfig } from "@/types/connector";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import { useVoiceCloneTTS } from "@/hooks/useVoiceCloneTTS";
 
 const STORAGE_KEY = "connected-sources";
 
@@ -20,6 +22,9 @@ export default function Settings() {
   const [connectorList, setConnectorList] = useState<Connector[]>(defaultConnectors);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  
+  // Voice cloning settings
+  const { voiceSettings, setVoiceSample, setLanguage } = useVoiceCloneTTS();
   const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
 
   // Handle OAuth callback for Google Drive, Email, and Calendar
@@ -270,7 +275,20 @@ export default function Settings() {
         </div>
       </motion.header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
+      <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+        {/* Voice Cloning Settings */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <VoiceCloneSettings
+            voiceSampleUrl={voiceSettings.voiceSampleUrl}
+            voiceName={voiceSettings.voiceName}
+            language={voiceSettings.language}
+            onVoiceSampleChange={setVoiceSample}
+            onLanguageChange={setLanguage}
+          />
+        </motion.div>
         {/* Connected Sources Summary */}
         <AnimatePresence>
           {connectedCount > 0 && (
