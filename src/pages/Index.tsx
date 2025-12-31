@@ -6,7 +6,7 @@ import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
 import { ChatMessage } from "@/components/ChatMessage";
 import { QuickActions } from "@/components/QuickActions";
-import { VoiceSelector } from "@/components/VoiceSelector";
+
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useConversation } from "@/hooks/useConversation";
@@ -48,10 +48,6 @@ const Index = () => {
     stop: stopSpeaking, 
     isSupported: ttsSupported,
     isLoading: ttsLoading,
-    selectedVoice,
-    setSelectedVoice,
-    customVoices,
-    addCustomVoice,
   } = useTextToSpeech();
 
   // Check connected sources on mount
@@ -233,15 +229,6 @@ const Index = () => {
                   </>
                 )}
               </motion.button>
-
-              {voiceEnabled && (
-                <VoiceSelector
-                  selectedVoice={selectedVoice}
-                  onVoiceChange={setSelectedVoice}
-                  customVoices={customVoices}
-                  onAddCustomVoice={addCustomVoice}
-                />
-              )}
 
               {ttsLoading && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
