@@ -18,6 +18,65 @@ interface ChatRequest {
   connectedSources: ConnectedSource[];
 }
 
+// Cache for refreshed access tokens (in-memory, per request)
+const tokenCache: Record<string, { accessToken: string; expiresAt: number }> = {};
+
+// Helper to refresh Google OAuth token from refresh token
+async function getGoogleAccessToken(refreshToken: string, service: 'drive' | 'gmail'): Promise<string> {
+  const cacheKey = `${service}_${refreshToken.substring(0, 10)}`;
+  const cached = tokenCache[cacheKey];
+  
+  // Return cached token if still valid (with 60s buffer)
+  if (cached && cached.expiresAt > Date.now() + 60000) {
+    console.log(`[OAuth] Using cached ${service} access token`);
+    return cached.accessToken;
+  }
+  
+  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+  
+  if (!clientId || !clientSecret) {
+    throw new Error(`Google OAuth credentials not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.`);
+  }
+  
+  console.log(`[OAuth] Refreshing ${service} access token...`);
+  
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[OAuth] Token refresh failed:`, response.status, errorText);
+    throw new Error(`Failed to refresh ${service} token: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  const accessToken = data.access_token;
+  const expiresIn = data.expires_in || 3600;
+  
+  // Cache the token
+  tokenCache[cacheKey] = {
+    accessToken,
+    expiresAt: Date.now() + (expiresIn * 1000),
+  };
+  
+  console.log(`[OAuth] Successfully refreshed ${service} access token, expires in ${expiresIn}s`);
+  return accessToken;
+}
+
+// Helper to detect if a token is a refresh token (starts with "1//")
+function isRefreshToken(token: string): boolean {
+  return token.startsWith('1//');
+}
+
 // Define available tools for function calling
 const AVAILABLE_TOOLS = [
   // ServiceNow tools
@@ -714,16 +773,25 @@ async function executeGoogleDrive(
   args: Record<string, unknown>,
   config: Record<string, string>
 ): Promise<unknown> {
-  // Check for server-side access token first (from secrets)
-  const serverAccessToken = Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN') || '';
-  const accessToken = config?.accessToken || serverAccessToken;
+  // Check for server-side token first (from secrets)
+  const serverToken = Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN') || '';
+  let token = config?.accessToken || serverToken;
 
-  if (!accessToken) {
+  if (!token) {
     return { error: "Google Drive not configured. Please add your access token in Settings or as a secret." };
   }
 
+  // If it's a refresh token, exchange it for an access token
+  if (isRefreshToken(token)) {
+    try {
+      token = await getGoogleAccessToken(token, 'drive');
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to refresh Google Drive token' };
+    }
+  }
+
   const headers = {
-    'Authorization': `Bearer ${accessToken}`,
+    'Authorization': `Bearer ${token}`,
     'Accept': 'application/json',
   };
 
@@ -1239,14 +1307,23 @@ async function executeGmail(
   args: Record<string, unknown>,
   config: Record<string, string>
 ): Promise<unknown> {
-  const accessToken = config.accessToken || Deno.env.get('GMAIL_ACCESS_TOKEN');
+  let token = config.accessToken || Deno.env.get('GMAIL_ACCESS_TOKEN') || '';
   
-  if (!accessToken) {
+  if (!token) {
     return { error: "Gmail not connected. Please add your Gmail access token." };
   }
 
+  // If it's a refresh token, exchange it for an access token
+  if (isRefreshToken(token)) {
+    try {
+      token = await getGoogleAccessToken(token, 'gmail');
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to refresh Gmail token' };
+    }
+  }
+
   const headers = {
-    'Authorization': `Bearer ${accessToken}`,
+    'Authorization': `Bearer ${token}`,
   };
 
   try {
