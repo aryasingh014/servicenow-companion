@@ -8,7 +8,7 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { QuickActions } from "@/components/QuickActions";
 
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
-import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useVoiceCloneTTS } from "@/hooks/useVoiceCloneTTS";
 import { useConversation } from "@/hooks/useConversation";
 import { streamChat } from "@/services/chatService";
 import { getConnectedSources } from "@/services/connectorService";
@@ -46,9 +46,10 @@ const Index = () => {
     isSpeaking, 
     speak, 
     stop: stopSpeaking, 
-    isSupported: ttsSupported,
     isLoading: ttsLoading,
-  } = useTextToSpeech();
+    voiceSettings,
+    error: ttsError,
+  } = useVoiceCloneTTS();
 
   // Check connected sources on mount
   useEffect(() => {
@@ -99,8 +100,8 @@ const Index = () => {
             addMessage("assistant", assistantResponse);
             setIsProcessing(false);
 
-            // Speak the response if voice is enabled
-            if (voiceEnabled && ttsSupported && assistantResponse) {
+            // Speak the response if voice is enabled (using voice cloning)
+            if (voiceEnabled && assistantResponse) {
               speak(assistantResponse.replace(/\*\*/g, "").replace(/•/g, "").replace(/\n/g, " "));
             }
           },
@@ -126,7 +127,7 @@ const Index = () => {
         });
       }
     },
-    [messages, addMessage, setIsProcessing, voiceEnabled, speak, ttsSupported, toast]
+    [messages, addMessage, setIsProcessing, voiceEnabled, speak, toast]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
