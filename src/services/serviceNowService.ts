@@ -121,6 +121,80 @@ export class ServiceNowService {
     return result?.result?.number || 'INC0000000';
   }
 
+  async updateIncident(data: {
+    number: string;
+    shortDescription?: string;
+    description?: string;
+    state?: string;
+    urgency?: string;
+    impact?: string;
+    priority?: string;
+    category?: string;
+    assignmentGroup?: string;
+    assignedTo?: string;
+    closeCode?: string;
+    closeNotes?: string;
+    workNotes?: string;
+    comments?: string;
+  }): Promise<Incident | null> {
+    const stateMap: Record<string, string> = { 
+      'new': '1', 
+      'in progress': '2', 
+      'on hold': '3', 
+      'resolved': '6', 
+      'closed': '7', 
+      'canceled': '8' 
+    };
+    const urgencyMap: Record<string, string> = { low: '3', medium: '2', high: '1' };
+    const impactMap: Record<string, string> = { low: '3', medium: '2', high: '1' };
+    const priorityMap: Record<string, string> = { critical: '1', high: '2', medium: '3', low: '4', planning: '5' };
+    
+    const params: Record<string, unknown> = {
+      number: data.number,
+    };
+    
+    if (data.shortDescription) params.short_description = data.shortDescription;
+    if (data.description) params.description = data.description;
+    if (data.state) params.state = stateMap[data.state.toLowerCase()] || data.state;
+    if (data.urgency) params.urgency = urgencyMap[data.urgency.toLowerCase()] || data.urgency;
+    if (data.impact) params.impact = impactMap[data.impact.toLowerCase()] || data.impact;
+    if (data.priority) params.priority = priorityMap[data.priority.toLowerCase()] || data.priority;
+    if (data.category) params.category = data.category;
+    if (data.assignmentGroup) params.assignment_group = data.assignmentGroup;
+    if (data.assignedTo) params.assigned_to = data.assignedTo;
+    if (data.closeCode) params.close_code = data.closeCode;
+    if (data.closeNotes) params.close_notes = data.closeNotes;
+    if (data.workNotes) params.work_notes = data.workNotes;
+    if (data.comments) params.comments = data.comments;
+    
+    console.log('Updating incident:', data.number, 'with params:', params);
+    
+    const { data: result, error } = await supabase.functions.invoke('servicenow-api', {
+      body: {
+        action: 'updateIncident',
+        params
+      }
+    });
+    
+    if (error) throw new Error(error.message);
+    
+    const updated = result?.result;
+    if (!updated) return null;
+    
+    console.log('✅ Incident updated successfully:', updated.number);
+    
+    return {
+      sysId: updated.sys_id,
+      number: updated.number,
+      shortDescription: updated.short_description,
+      description: updated.description,
+      state: this.mapState(updated.state),
+      priority: this.mapPriority(updated.priority),
+      assignmentGroup: updated.assignment_group?.display_value || 'Unassigned',
+      openedAt: updated.opened_at,
+    };
+  }
+
   async getCatalogItems(): Promise<Array<{ name: string; description: string; category: string }>> {
     const { data, error } = await supabase.functions.invoke('servicenow-api', {
       body: { action: 'getCatalogItems' }

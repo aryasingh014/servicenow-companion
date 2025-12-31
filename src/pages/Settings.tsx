@@ -23,8 +23,8 @@ export default function Settings() {
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   
-  // Voice cloning settings
-  const { voiceSettings, setVoiceSample, setLanguage } = useVoiceCloneTTS();
+  // Voice settings
+  const { voiceSettings, setVoice, setPitch, setRate, availableVoices, speak, isSpeaking } = useVoiceCloneTTS();
   const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
 
   // Handle OAuth callback for Google Drive, Email, and Calendar
@@ -276,17 +276,19 @@ export default function Settings() {
       </motion.header>
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
-        {/* Voice Cloning Settings */}
+        {/* Voice Settings */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
         >
           <VoiceCloneSettings
-            voiceSampleUrl={voiceSettings.voiceSampleUrl}
-            voiceName={voiceSettings.voiceName}
-            language={voiceSettings.language}
-            onVoiceSampleChange={setVoiceSample}
-            onLanguageChange={setLanguage}
+            voiceSettings={voiceSettings}
+            availableVoices={availableVoices}
+            onVoiceChange={setVoice}
+            onPitchChange={setPitch}
+            onRateChange={setRate}
+            onTestVoice={() => speak("Hello! I'm your ServiceNow voice assistant. How can I help you today?")}
+            isSpeaking={isSpeaking}
           />
         </motion.div>
         {/* Connected Sources Summary */}

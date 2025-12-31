@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
 interface VoiceSettings {
-  voiceSampleUrl: string | null;
   voiceName: string;
   language: string;
+  pitch: number;
+  rate: number;
+  selectedVoiceURI: string | null;
 }
 
 interface UseVoiceCloneTTSReturn {
@@ -12,24 +14,30 @@ interface UseVoiceCloneTTSReturn {
   speak: (text: string) => Promise<void>;
   stop: () => void;
   voiceSettings: VoiceSettings;
-  setVoiceSample: (url: string | null, name?: string) => void;
+  setVoice: (voiceURI: string, name: string) => void;
   setLanguage: (language: string) => void;
+  setPitch: (pitch: number) => void;
+  setRate: (rate: number) => void;
+  availableVoices: SpeechSynthesisVoice[];
   isConfigured: boolean;
   error: string | null;
 }
 
-const STORAGE_KEY = 'voice-clone-settings';
+const STORAGE_KEY = 'voice-settings-v2';
 
 const defaultSettings: VoiceSettings = {
-  voiceSampleUrl: null,
   voiceName: 'Default Assistant',
-  language: 'en',
+  language: 'en-US',
+  pitch: 1.0,
+  rate: 1.0,
+  selectedVoiceURI: null,
 };
 
 export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -39,8 +47,48 @@ export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
     }
   });
   
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  // Load available voices
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        // Prioritize natural-sounding voices
+        const sortedVoices = voices.sort((a, b) => {
+          // Prefer voices with "Natural", "Premium", or "Enhanced" in the name
+          const aScore = (a.name.includes('Natural') || a.name.includes('Premium') || a.name.includes('Enhanced') || a.name.includes('Google')) ? 1 : 0;
+          const bScore = (b.name.includes('Natural') || b.name.includes('Premium') || b.name.includes('Enhanced') || b.name.includes('Google')) ? 1 : 0;
+          return bScore - aScore;
+        });
+        setAvailableVoices(sortedVoices);
+        
+        // Auto-select a good default voice if none selected
+        if (!voiceSettings.selectedVoiceURI) {
+          const goodVoice = sortedVoices.find(v => 
+            v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Premium'))
+          ) || sortedVoices.find(v => v.lang.startsWith('en'));
+          
+          if (goodVoice) {
+            setVoiceSettings(prev => ({
+              ...prev,
+              selectedVoiceURI: goodVoice.voiceURI,
+              voiceName: goodVoice.name,
+            }));
+          }
+        }
+      }
+    };
+
+    loadVoices();
+    
+    // Chrome requires listening to voiceschanged event
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, [voiceSettings.selectedVoiceURI]);
 
   // Persist settings to localStorage
   useEffect(() => {
@@ -50,117 +98,91 @@ export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
   const speak = useCallback(async (text: string) => {
     if (!text.trim()) return;
     
-    // Stop any ongoing speech
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (!('speechSynthesis' in window)) {
+      setError('Speech synthesis not supported in this browser');
+      return;
     }
 
-    setIsLoading(true);
+    // Stop any ongoing speech
+    window.speechSynthesis.cancel();
     setError(null);
-    abortControllerRef.current = new AbortController();
+    setIsLoading(true);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/voice-clone-tts`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            text,
-            voiceSampleUrl: voiceSettings.voiceSampleUrl,
-            language: voiceSettings.language,
-          }),
-          signal: abortControllerRef.current.signal,
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(errorData.error || `TTS failed: ${response.status}`);
-      }
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
+      const utterance = new SpeechSynthesisUtterance(text);
+      utteranceRef.current = utterance;
       
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-
-      audio.onplay = () => {
+      // Find the selected voice
+      const voices = window.speechSynthesis.getVoices();
+      const selectedVoice = voices.find(v => v.voiceURI === voiceSettings.selectedVoiceURI);
+      
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        utterance.lang = selectedVoice.lang;
+      } else {
+        utterance.lang = voiceSettings.language;
+      }
+      
+      utterance.pitch = voiceSettings.pitch;
+      utterance.rate = voiceSettings.rate;
+      
+      utterance.onstart = () => {
         setIsLoading(false);
         setIsSpeaking(true);
+        console.log('[VoiceTTS] Started speaking');
       };
-
-      audio.onended = () => {
+      
+      utterance.onend = () => {
         setIsSpeaking(false);
-        URL.revokeObjectURL(audioUrl);
-        audioRef.current = null;
+        utteranceRef.current = null;
+        console.log('[VoiceTTS] Finished speaking');
       };
-
-      audio.onerror = (e) => {
-        console.error('[VoiceCloneTTS] Audio playback error:', e);
+      
+      utterance.onerror = (event) => {
+        console.error('[VoiceTTS] Error:', event);
+        setError(`Speech error: ${event.error}`);
         setIsLoading(false);
         setIsSpeaking(false);
-        setError('Audio playback failed');
-        URL.revokeObjectURL(audioUrl);
-        audioRef.current = null;
+        utteranceRef.current = null;
       };
-
-      await audio.play();
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.log('[VoiceCloneTTS] Request aborted');
-        return;
-      }
       
-      console.error('[VoiceCloneTTS] Error:', err);
-      setError(err instanceof Error ? err.message : 'TTS failed');
+      // Small delay to ensure voice is loaded
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.error('[VoiceTTS] Error:', err);
+      setError(err instanceof Error ? err.message : 'Speech failed');
       setIsLoading(false);
       setIsSpeaking(false);
-
-      // Fallback to browser TTS if voice cloning fails
-      if ('speechSynthesis' in window) {
-        console.log('[VoiceCloneTTS] Falling back to browser TTS');
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onstart = () => setIsSpeaking(true);
-        window.speechSynthesis.speak(utterance);
-      }
     }
   }, [voiceSettings]);
 
   const stop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    window.speechSynthesis.cancel();
+    utteranceRef.current = null;
     setIsSpeaking(false);
     setIsLoading(false);
   }, []);
 
-  const setVoiceSample = useCallback((url: string | null, name?: string) => {
+  const setVoice = useCallback((voiceURI: string, name: string) => {
     setVoiceSettings(prev => ({
       ...prev,
-      voiceSampleUrl: url,
-      voiceName: name || (url ? 'Custom Voice' : 'Default Assistant'),
+      selectedVoiceURI: voiceURI,
+      voiceName: name,
     }));
   }, []);
 
   const setLanguage = useCallback((language: string) => {
     setVoiceSettings(prev => ({ ...prev, language }));
+  }, []);
+
+  const setPitch = useCallback((pitch: number) => {
+    setVoiceSettings(prev => ({ ...prev, pitch }));
+  }, []);
+
+  const setRate = useCallback((rate: number) => {
+    setVoiceSettings(prev => ({ ...prev, rate }));
   }, []);
 
   return {
@@ -169,9 +191,12 @@ export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
     speak,
     stop,
     voiceSettings,
-    setVoiceSample,
+    setVoice,
     setLanguage,
-    isConfigured: true, // Will work with default voice even without custom sample
+    setPitch,
+    setRate,
+    availableVoices,
+    isConfigured: true,
     error,
   };
 };
