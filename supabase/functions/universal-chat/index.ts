@@ -1264,7 +1264,37 @@ async function executeFileConnector(
           return { error: 'Search query is required' };
         }
 
-        // Use keyword search function if available, otherwise basic search
+        console.log(`[File Search] Searching for "${query}" in file documents`);
+
+        // Try keyword search function first for better results
+        try {
+          const { data: keywordData, error: keywordError } = await supabase.rpc('keyword_search', {
+            query_text: query,
+            match_count: 10,
+            connector_filter: 'file',
+          });
+
+          if (!keywordError && keywordData && keywordData.length > 0) {
+            console.log(`[File Search] Found ${keywordData.length} results via keyword search`);
+            return {
+              results: keywordData.map((doc: any) => ({
+                id: doc.id,
+                title: doc.title,
+                snippet: doc.content?.substring(0, 500) + (doc.content?.length > 500 ? '...' : ''),
+                fullContent: doc.content,
+                type: doc.source_type,
+                metadata: doc.metadata,
+                relevanceScore: doc.keyword_rank,
+              })),
+              total: keywordData.length,
+              message: `Found ${keywordData.length} document(s) matching "${query}"`,
+            };
+          }
+        } catch (rpcError) {
+          console.log('[File Search] Keyword search RPC failed, falling back to basic search');
+        }
+
+        // Fallback to basic ilike search
         let searchQuery = supabase
           .from('documents')
           .select('id, title, content, source_type, connector_id, metadata')
@@ -1283,11 +1313,14 @@ async function executeFileConnector(
           return { error: 'Failed to search documents' };
         }
 
+        console.log(`[File Search] Found ${data?.length || 0} results via basic search`);
+
         return {
           results: data?.map((doc: any) => ({
             id: doc.id,
             title: doc.title,
-            snippet: doc.content?.substring(0, 300) + '...',
+            snippet: doc.content?.substring(0, 500) + (doc.content?.length > 500 ? '...' : ''),
+            fullContent: doc.content,
             type: doc.source_type,
             metadata: doc.metadata,
           })) || [],
