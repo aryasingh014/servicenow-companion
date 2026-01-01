@@ -344,12 +344,12 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "file_search_documents",
-      description: "Search through uploaded files and documents. Use when user asks to find information in uploaded files, search documents, or look for content in files.",
+      description: "Search through uploaded files and documents for ANY information including employee data, IDs, names, departments, etc. ALWAYS use this tool when: 1) User mentions employee IDs like EMP0000001, 2) User asks about employees, staff, departments, salaries, 3) User references any uploaded file or spreadsheet data, 4) User asks to find/search/look for any data that could be in files.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search keywords to find in documents" },
-          file_type: { type: "string", description: "Filter by file type (pdf, doc, txt)" }
+          query: { type: "string", description: "Search keywords - can be employee ID, name, department, or any text to find in documents" },
+          file_type: { type: "string", description: "Filter by file type (xlsx, pdf, doc, txt)" }
         },
         required: ["query"]
       }
@@ -359,7 +359,7 @@ const AVAILABLE_TOOLS = [
     type: "function",
     function: {
       name: "file_list_documents",
-      description: "List all uploaded and indexed documents. Use when user asks to show files, list documents, or see what files are available.",
+      description: "List all uploaded and indexed documents including Excel spreadsheets, PDFs, etc. Use when user asks about what files are uploaded, wants to see available documents, or asks about employee data files.",
       parameters: {
         type: "object",
         properties: {
@@ -2125,6 +2125,7 @@ function buildSystemPrompt(connectedSources: ConnectedSource[]): string {
   const hasGoogleDrive = !!Deno.env.get('GOOGLE_DRIVE_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'google-drive' || s.id === 'google-drive');
   const hasGitHub = !!Deno.env.get('GITHUB_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'github' || s.id === 'github');
   const hasGmail = !!Deno.env.get('GMAIL_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'email' || s.id === 'email');
+  const hasFileConnector = connectedSources.some(s => s.type === 'file' || s.id === 'file');
   
   return `You are NOVA, a friendly and intelligent AI assistant. You communicate naturally like a helpful colleague, not a robot.
 
@@ -2154,9 +2155,12 @@ ${hasGmail ? '+ Gmail (connected via token)' : ''}
 - **Gmail**: List, search, and read emails
 - **Jira**: List projects, search and retrieve issues
 - **GitHub**: List repos, search code, view files, list issues and PRs
-- **Files**: Search and list uploaded documents
+- **Files/Documents**: Search uploaded files (Excel, CSV, PDF, etc.) for employee data, IDs, departments, and any content
 
-## CRITICAL: You MUST call functions when available. Never say "I can't" if a function exists.
+## CRITICAL RULES:
+1. You MUST call functions when available. Never say "I can't" if a function exists.
+2. When user mentions ANY ID format (EMP0000001, employee IDs, etc.) or asks about employees/departments/salaries - ALWAYS search uploaded files first using file_search_documents.
+3. When user mentions a filename or asks about data in files - ALWAYS search using file_search_documents.
 
 ## Response Style Examples:
 ❌ BAD (robotic): "The incident INC0010017 has been created successfully with priority 1."
@@ -2210,7 +2214,17 @@ ${hasGmail ? `
 - "show email" → gmail_get_email
 ` : ''}
 
-${connectedSources.length === 0 && !hasGitHub && !hasGmail ? `
+${hasFileConnector ? `
+## File Connector Connected - ALWAYS USE FOR DATA QUERIES:
+- Employee IDs (EMP...) → file_search_documents with the ID
+- "find employee X" → file_search_documents with name
+- "IT employees" → file_search_documents with "IT"
+- "list files" → file_list_documents
+- ANY question about employees, departments, salaries, etc. → file_search_documents
+- ALWAYS search uploaded files when user asks about data that could be in spreadsheets
+` : ''}
+
+${connectedSources.length === 0 && !hasGitHub && !hasGmail && !hasFileConnector ? `
 ## No Sources Yet:
 Friendly guide them: "Hey! To get started, head to Settings and connect your tools - ServiceNow, Jira, Google Drive, whatever you use. Then come back and I can help you search and manage everything!"
 ` : ''}`
