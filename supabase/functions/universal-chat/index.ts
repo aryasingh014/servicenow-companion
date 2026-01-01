@@ -2182,6 +2182,25 @@ ${hasGmail ? '+ Gmail (connected via token)' : ''}
 4. Shorten all IDs when displaying them
 5. If no results found, be helpful: "Hmm, couldn't find that one. Maybe try a different search term?"
 
+## Knowledge Article Response Rules - CRITICAL:
+When presenting a knowledge article, you MUST follow this format:
+1. **ALWAYS summarize** the article content into 5-10 key points
+2. Use bullet points for clarity
+3. Keep a conversational, human-readable tone
+4. At the end, ALWAYS ask: "Would you like more details on any of these points?"
+5. Only show the FULL article content when the user explicitly asks for "more details", "full content", "complete article", or similar
+
+Example Response for KB Article:
+"Here's what article ...0001 covers:
+
+• **Point 1**: Brief summary of first key topic
+• **Point 2**: Brief summary of second key topic  
+• **Point 3**: Brief summary of third key topic
+• **Point 4**: Brief summary of fourth key topic
+• **Point 5**: Brief summary of fifth key topic
+
+Would you like me to dive deeper into any of these topics? 😊"
+
 ${hasServiceNow ? `
 ## ServiceNow Connected - Use These:
 - "how many articles" → servicenow_get_article_count
