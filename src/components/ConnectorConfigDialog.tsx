@@ -23,6 +23,7 @@ import { Connector, ConnectorField } from "@/types/connector";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { connectorIcons } from "@/components/ConnectorIcons";
+import * as XLSX from "xlsx";
 
 interface ConnectorConfigDialogProps {
   connector: Connector | null;
@@ -40,8 +41,52 @@ interface UploadedFile {
   indexed?: boolean;
 }
 
-// Read file content as text
+// Read file content - handles Excel files specially
 async function readFileContent(file: globalThis.File): Promise<string> {
+  const fileName = file.name.toLowerCase();
+  
+  // Handle Excel files (.xlsx, .xls)
+  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          
+          // Convert all sheets to text
+          let allContent = '';
+          workbook.SheetNames.forEach((sheetName, index) => {
+            const worksheet = workbook.Sheets[sheetName];
+            // Convert to CSV for text representation
+            const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+            // Also get as JSON for better structure
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            allContent += `\n=== Sheet: ${sheetName} ===\n`;
+            allContent += csvContent;
+            allContent += '\n';
+            
+            // Add formatted data summary
+            if (jsonData.length > 0) {
+              const headers = jsonData[0] as string[];
+              allContent += `\nColumns: ${headers.join(', ')}\n`;
+              allContent += `Total rows: ${jsonData.length - 1}\n`;
+            }
+          });
+          
+          resolve(allContent.trim());
+        } catch (error) {
+          console.error('Excel parsing error:', error);
+          reject(new Error('Failed to parse Excel file'));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  
+  // Handle regular text files
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -49,13 +94,13 @@ async function readFileContent(file: globalThis.File): Promise<string> {
     
     // Handle different file types
     if (file.type.includes('text') || 
-        file.name.endsWith('.txt') || 
-        file.name.endsWith('.md') ||
-        file.name.endsWith('.csv') ||
-        file.name.endsWith('.json')) {
+        fileName.endsWith('.txt') || 
+        fileName.endsWith('.md') ||
+        fileName.endsWith('.csv') ||
+        fileName.endsWith('.json')) {
       reader.readAsText(file);
     } else {
-      // For binary files, just read as text (may not work perfectly)
+      // For other files, try reading as text
       reader.readAsText(file);
     }
   });

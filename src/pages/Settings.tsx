@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2, Volume2 } from "lucide-react";
+import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2, Volume2, Plug } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { ConnectorCard } from "@/components/ConnectorCard";
@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useVoiceCloneTTS } from "@/hooks/useVoiceCloneTTS";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const STORAGE_KEY = "connected-sources";
 
@@ -22,6 +23,7 @@ export default function Settings() {
   const [connectorList, setConnectorList] = useState<Connector[]>(defaultConnectors);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("connectors");
   
   // Voice settings
   const { voiceSettings, setVoice, setPitch, setRate, setCustomVoice, availableVoices, speak, isSpeaking } = useVoiceCloneTTS();
@@ -267,153 +269,173 @@ export default function Settings() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-xl font-display font-semibold">Data Sources</h1>
+            <h1 className="text-xl font-display font-semibold">Settings</h1>
             <p className="text-sm text-muted-foreground">
-              Connect your tools to unlock AI-powered insights
+              Configure your voice and data sources
             </p>
           </div>
         </div>
       </motion.header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
-        {/* Voice Settings */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <VoiceCloneSettings
-            voiceSettings={voiceSettings}
-            availableVoices={availableVoices}
-            onVoiceChange={setVoice}
-            onPitchChange={setPitch}
-            onRateChange={setRate}
-            onCustomVoiceChange={setCustomVoice}
-            onTestVoice={() => speak("Hello! I'm your voice assistant. How can I help you today?")}
-            isSpeaking={isSpeaking}
-          />
-        </motion.div>
-        {/* Connected Sources Summary */}
-        <AnimatePresence>
-          {connectedCount > 0 && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-8"
-            >
-              <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 p-5">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2 rounded-lg bg-primary/20">
-                    <Sparkles className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="font-semibold">Your Connected Sources</h2>
-                    <p className="text-sm text-muted-foreground">
-                      NOVA can now search and answer questions from these sources
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {connectedConnectors.map((connector) => (
-                    <Badge
-                      key={connector.id}
-                      variant="secondary"
-                      className="gap-1.5 py-1.5 px-3 bg-background/50"
-                    >
-                      <span>{connector.icon}</span>
-                      {connector.name}
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <main className="max-w-4xl mx-auto px-6 py-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-8">
+            <TabsTrigger value="voice" className="flex items-center gap-2">
+              <Volume2 className="w-4 h-4" />
+              Voice Settings
+            </TabsTrigger>
+            <TabsTrigger value="connectors" className="flex items-center gap-2">
+              <Plug className="w-4 h-4" />
+              Connectors
+              {connectedCount > 0 && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {connectedCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Getting Started Banner (when no sources connected) */}
-        <AnimatePresence>
-          {connectedCount === 0 && (
+          {/* Voice Settings Tab */}
+          <TabsContent value="voice" className="space-y-6">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="mb-8"
             >
-              <div className="rounded-xl bg-gradient-to-br from-secondary/80 to-secondary/40 border border-border p-6 text-center">
-                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
-                  <Link2 className="w-6 h-6 text-primary" />
-                </div>
-                <h2 className="text-lg font-semibold mb-2">Connect Your First Source</h2>
-                <p className="text-muted-foreground text-sm mb-4 max-w-md mx-auto">
-                  Choose a data source below to get started. Once connected, you can ask NOVA 
-                  questions about your data - no coding required!
-                </p>
+              <VoiceCloneSettings
+                voiceSettings={voiceSettings}
+                availableVoices={availableVoices}
+                onVoiceChange={setVoice}
+                onPitchChange={setPitch}
+                onRateChange={setRate}
+                onCustomVoiceChange={setCustomVoice}
+                onTestVoice={() => speak("Hello! I'm your voice assistant. How can I help you today?")}
+                isSpeaking={isSpeaking}
+              />
+            </motion.div>
+          </TabsContent>
+
+          {/* Connectors Tab */}
+          <TabsContent value="connectors" className="space-y-8">
+            {/* Connected Sources Summary */}
+            <AnimatePresence>
+              {connectedCount > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                >
+                  <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 p-5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 rounded-lg bg-primary/20">
+                        <Sparkles className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h2 className="font-semibold">Your Connected Sources</h2>
+                        <p className="text-sm text-muted-foreground">
+                          NOVA can now search and answer questions from these sources
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {connectedConnectors.map((connector) => (
+                        <Badge
+                          key={connector.id}
+                          variant="secondary"
+                          className="gap-1.5 py-1.5 px-3 bg-background/50"
+                        >
+                          <span>{connector.icon}</span>
+                          {connector.name}
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Getting Started Banner (when no sources connected) */}
+            <AnimatePresence>
+              {connectedCount === 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                >
+                  <div className="rounded-xl bg-gradient-to-br from-secondary/80 to-secondary/40 border border-border p-6 text-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
+                      <Link2 className="w-6 h-6 text-primary" />
+                    </div>
+                    <h2 className="text-lg font-semibold mb-2">Connect Your First Source</h2>
+                    <p className="text-muted-foreground text-sm mb-4 max-w-md mx-auto">
+                      Choose a data source below to get started. Once connected, you can ask NOVA 
+                      questions about your data - no coding required!
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Search */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search connectors..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Search */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search connectors..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </motion.div>
+            {/* Connector Categories */}
+            {connectorCategories.map((category, categoryIndex) => {
+              const categoryConnectors = filteredConnectors.filter(
+                (c) => c.category === category.id
+              );
 
-        {/* Connector Categories */}
-        {connectorCategories.map((category, categoryIndex) => {
-          const categoryConnectors = filteredConnectors.filter(
-            (c) => c.category === category.id
-          );
+              if (categoryConnectors.length === 0) return null;
 
-          if (categoryConnectors.length === 0) return null;
+              return (
+                <motion.section
+                  key={category.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: categoryIndex * 0.1 }}
+                >
+                  <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
+                    <span>{category.icon}</span>
+                    {category.name}
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {categoryConnectors.map((connector) => (
+                      <ConnectorCard
+                        key={connector.id}
+                        connector={connector}
+                        onConnect={handleConnect}
+                        onDisconnect={handleDisconnect}
+                        onConfigure={handleConfigure}
+                      />
+                    ))}
+                  </div>
+                </motion.section>
+              );
+            })}
 
-          return (
-            <motion.section
-              key={category.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: categoryIndex * 0.1 }}
-              className="mb-10"
-            >
-              <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-                <span>{category.icon}</span>
-                {category.name}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {categoryConnectors.map((connector) => (
-                  <ConnectorCard
-                    key={connector.id}
-                    connector={connector}
-                    onConnect={handleConnect}
-                    onDisconnect={handleDisconnect}
-                    onConfigure={handleConfigure}
-                  />
-                ))}
+            {filteredConnectors.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">
+                  No connectors found matching "{searchQuery}"
+                </p>
               </div>
-            </motion.section>
-          );
-        })}
-
-        {filteredConnectors.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">
-              No connectors found matching "{searchQuery}"
-            </p>
-          </div>
-        )}
+            )}
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Config Dialog */}
