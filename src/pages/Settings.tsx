@@ -24,7 +24,7 @@ export default function Settings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   
   // Voice settings
-  const { voiceSettings, setVoice, setPitch, setRate, availableVoices, speak, isSpeaking } = useVoiceCloneTTS();
+  const { voiceSettings, setVoice, setPitch, setRate, setCustomVoice, availableVoices, speak, isSpeaking } = useVoiceCloneTTS();
   const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
 
   // Handle OAuth callback for Google Drive, Email, and Calendar
@@ -287,7 +287,8 @@ export default function Settings() {
             onVoiceChange={setVoice}
             onPitchChange={setPitch}
             onRateChange={setRate}
-            onTestVoice={() => speak("Hello! I'm your ServiceNow voice assistant. How can I help you today?")}
+            onCustomVoiceChange={setCustomVoice}
+            onTestVoice={() => speak("Hello! I'm your voice assistant. How can I help you today?")}
             isSpeaking={isSpeaking}
           />
         </motion.div>
