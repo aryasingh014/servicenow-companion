@@ -103,41 +103,11 @@ export const connectors: Connector[] = [
   {
     id: 'file',
     name: 'File',
-    description: 'Upload and index local files',
+    description: 'Upload and index local files for AI search',
     icon: '📄',
     category: 'popular',
     isConnected: false,
-    configFields: [
-      { name: 'fileTypes', label: 'Supported file types', type: 'text', required: false, placeholder: 'PDF, DOC, TXT (all supported)' },
-    ],
-  },
-  {
-    id: 'browser-history',
-    name: 'Browser History',
-    description: 'Index your browser history for search',
-    icon: '🕐',
-    category: 'popular',
-    isConnected: false,
-    configFields: [
-      { name: 'daysBack', label: 'Days to index', type: 'select', required: true, options: [
-        { value: '7', label: 'Last 7 days' },
-        { value: '30', label: 'Last 30 days' },
-        { value: '90', label: 'Last 90 days' },
-      ]},
-    ],
-  },
-  {
-    id: 'whatsapp',
-    name: 'WhatsApp',
-    description: 'Connect WhatsApp Business API to access messages',
-    icon: '💬',
-    category: 'popular',
-    isConnected: false,
-    configFields: [
-      { name: 'accessToken', label: 'WhatsApp Business API Token', type: 'password', required: true, placeholder: 'Your WhatsApp Cloud API access token' },
-      { name: 'phoneNumberId', label: 'Phone Number ID', type: 'text', required: true, placeholder: 'Your WhatsApp phone number ID' },
-      { name: 'businessAccountId', label: 'Business Account ID', type: 'text', required: false, placeholder: 'Optional: WhatsApp Business Account ID' },
-    ],
+    configFields: [],
   },
 ];
 

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
-import { Volume2, Play, Settings2 } from "lucide-react";
+import { Volume2, Play, Settings2, Mic, Square, Upload, Trash2 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 interface VoiceSettings {
   voiceName: string;
@@ -12,6 +13,7 @@ interface VoiceSettings {
   pitch: number;
   rate: number;
   selectedVoiceURI: string | null;
+  customVoiceUrl?: string;
 }
 
 interface VoiceCloneSettingsProps {
@@ -21,6 +23,7 @@ interface VoiceCloneSettingsProps {
   onPitchChange: (pitch: number) => void;
   onRateChange: (rate: number) => void;
   onTestVoice: () => void;
+  onCustomVoiceChange?: (url: string | null) => void;
   isSpeaking: boolean;
 }
 
@@ -31,13 +34,122 @@ export const VoiceCloneSettings = ({
   onPitchChange,
   onRateChange,
   onTestVoice,
+  onCustomVoiceChange,
   isSpeaking,
 }: VoiceCloneSettingsProps) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(voiceSettings.customVoiceUrl || null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get English voices first, then others
   const englishVoices = availableVoices.filter(v => v.lang.startsWith('en'));
   const otherVoices = availableVoices.filter(v => !v.lang.startsWith('en'));
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        setRecordedAudioUrl(audioUrl);
+        onCustomVoiceChange?.(audioUrl);
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+        
+        toast({
+          title: "Recording saved",
+          description: "Your voice sample has been recorded successfully.",
+        });
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start duration counter
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast({
+        title: "Recording failed",
+        description: "Could not access microphone. Please check permissions.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('audio/')) {
+        toast({
+          title: "Invalid file",
+          description: "Please upload an audio file.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const audioUrl = URL.createObjectURL(file);
+      setRecordedAudioUrl(audioUrl);
+      onCustomVoiceChange?.(audioUrl);
+      
+      toast({
+        title: "Voice sample uploaded",
+        description: `${file.name} has been loaded.`,
+      });
+    }
+  };
+
+  const clearRecording = () => {
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+    }
+    setRecordedAudioUrl(null);
+    onCustomVoiceChange?.(null);
+    
+    toast({
+      title: "Voice sample removed",
+      description: "Custom voice sample has been cleared.",
+    });
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <Card>
@@ -51,9 +163,80 @@ export const VoiceCloneSettings = ({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Voice Recording Section */}
+        <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <Label className="text-base font-medium">🎙️ Custom Voice Sample</Label>
+            {recordedAudioUrl && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearRecording}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Remove
+              </Button>
+            )}
+          </div>
+          
+          <p className="text-sm text-muted-foreground">
+            Record or upload your voice for a personalized experience
+          </p>
+
+          <div className="flex gap-2">
+            {!isRecording ? (
+              <Button
+                variant="outline"
+                onClick={startRecording}
+                className="flex-1"
+              >
+                <Mic className="w-4 h-4 mr-2" />
+                Start Recording
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                onClick={stopRecording}
+                className="flex-1"
+              >
+                <Square className="w-4 h-4 mr-2" />
+                Stop ({formatDuration(recordingDuration)})
+              </Button>
+            )}
+            
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isRecording}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Upload
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </div>
+
+          {recordedAudioUrl && (
+            <div className="space-y-2">
+              <Label className="text-sm">Preview your voice sample:</Label>
+              <audio
+                src={recordedAudioUrl}
+                controls
+                className="w-full h-10"
+              />
+            </div>
+          )}
+        </div>
+
         {/* Voice Selection */}
         <div className="space-y-2">
-          <Label>Voice</Label>
+          <Label>Browser Voice</Label>
           <Select
             value={voiceSettings.selectedVoiceURI || ''}
             onValueChange={(value) => {
@@ -105,7 +288,7 @@ export const VoiceCloneSettings = ({
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Available voices depend on your browser and operating system
+            Browser voice is used as fallback when custom voice is not available
           </p>
         </div>
 
@@ -174,10 +357,10 @@ export const VoiceCloneSettings = ({
         <div className="bg-muted/50 rounded-lg p-4 space-y-2">
           <h4 className="font-medium text-sm">💡 Tips for Best Experience</h4>
           <ul className="text-xs text-muted-foreground space-y-1">
-            <li>• Chrome and Edge offer the most natural-sounding voices</li>
+            <li>• Record 10-30 seconds of clear speech for best results</li>
+            <li>• Speak naturally in a quiet environment</li>
+            <li>• Chrome and Edge offer the most natural-sounding browser voices</li>
             <li>• Look for voices marked "Natural" or "Premium" for best quality</li>
-            <li>• macOS users have access to high-quality Siri voices</li>
-            <li>• Voice availability varies by browser and operating system</li>
           </ul>
         </div>
       </CardContent>

@@ -247,16 +247,27 @@ const AVAILABLE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "jira_list_projects",
+      description: "List all Jira projects the user has access to. Use when user asks to list projects, show projects, or wants to know available projects.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "jira_search_issues",
-      description: "Search Jira issues",
+      description: "Search Jira issues. Use when user asks to find issues, search tickets, or list issues.",
       parameters: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search text or JQL" },
-          project: { type: "string", description: "Project key" },
+          query: { type: "string", description: "Search text or JQL query" },
+          project: { type: "string", description: "Project key to filter by" },
           status: { type: "string", description: "Status filter" }
-        },
-        required: ["query"]
+        }
       }
     }
   },
@@ -274,6 +285,35 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
+  // File connector tools
+  {
+    type: "function",
+    function: {
+      name: "file_search_documents",
+      description: "Search through uploaded files and documents. Use when user asks to find information in uploaded files, search documents, or look for content in files.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search keywords to find in documents" },
+          file_type: { type: "string", description: "Filter by file type (pdf, doc, txt)" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "file_list_documents",
+      description: "List all uploaded and indexed documents. Use when user asks to show files, list documents, or see what files are available.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Max number of files to return (default 20)" }
+        }
+      }
+    }
+  },
   // RAG search
   {
     type: "function",
@@ -287,34 +327,6 @@ const AVAILABLE_TOOLS = [
           source_type: { type: "string", description: "Filter by source" }
         },
         required: ["query"]
-      }
-    }
-  },
-  // WhatsApp tools
-  {
-    type: "function",
-    function: {
-      name: "whatsapp_send_message",
-      description: "Send a WhatsApp message to a phone number. Use when user wants to send a message via WhatsApp.",
-      parameters: {
-        type: "object",
-        properties: {
-          to: { type: "string", description: "Phone number with country code (e.g., +1234567890)" },
-          message: { type: "string", description: "Message text to send" }
-        },
-        required: ["to", "message"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "whatsapp_get_conversations",
-      description: "Get WhatsApp Business conversation analytics and counts.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: []
       }
     }
   },
@@ -794,26 +806,72 @@ async function executeJira(
 
   try {
     switch (functionName) {
+      case 'jira_list_projects': {
+        const response = await fetch(
+          `${baseUrl}/rest/api/3/project?maxResults=50`,
+          { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Jira list projects error:', response.status, errorText);
+          return { error: `Jira error: ${response.status}` };
+        }
+        
+        const projects = await response.json();
+        return {
+          projects: projects.map((p: any) => ({
+            key: p.key,
+            name: p.name,
+            projectType: p.projectTypeKey,
+            lead: p.lead?.displayName || 'Unknown',
+            url: `${baseUrl}/browse/${p.key}`,
+          })),
+          total: projects.length,
+          message: `Found ${projects.length} project(s) in Jira`,
+        };
+      }
+
       case 'jira_search_issues': {
-        let jql = '';
+        let jql = 'ORDER BY created DESC';
         const query = args.query as string;
         
         // Build JQL
-        if (query.includes('=') || query.includes('~')) {
-          jql = query; // Already JQL
-        } else {
-          jql = `text ~ "${query}"`;
+        if (query) {
+          if (query.includes('=') || query.includes('~')) {
+            jql = query; // Already JQL
+          } else {
+            jql = `text ~ "${query}" ORDER BY created DESC`;
+          }
         }
         if (args.project) jql = `project = "${args.project}" AND ${jql}`;
         if (args.status) jql = `status = "${args.status}" AND ${jql}`;
 
         const response = await fetch(
-          `${baseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=10&fields=key,summary,status,priority,assignee,created`,
+          `${baseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=20&fields=key,summary,status,priority,assignee,created`,
           { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } }
         );
 
-        if (!response.ok) return { error: `Jira error: ${response.status}` };
-        return response.json();
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Jira search error:', response.status, errorText);
+          return { error: `Jira error: ${response.status}` };
+        }
+        
+        const data = await response.json();
+        return {
+          issues: data.issues?.map((issue: any) => ({
+            key: issue.key,
+            summary: issue.fields?.summary,
+            status: issue.fields?.status?.name,
+            priority: issue.fields?.priority?.name,
+            assignee: issue.fields?.assignee?.displayName || 'Unassigned',
+            created: issue.fields?.created,
+            url: `${baseUrl}/browse/${issue.key}`,
+          })) || [],
+          total: data.total,
+          message: `Found ${data.total} issue(s)${query ? ` matching "${query}"` : ''}`,
+        };
       }
 
       case 'jira_get_issue': {
@@ -824,7 +882,20 @@ async function executeJira(
         );
 
         if (!response.ok) return { error: `Jira error: ${response.status}` };
-        return response.json();
+        
+        const issue = await response.json();
+        return {
+          key: issue.key,
+          summary: issue.fields?.summary,
+          description: issue.fields?.description?.content?.[0]?.content?.[0]?.text || 'No description',
+          status: issue.fields?.status?.name,
+          priority: issue.fields?.priority?.name,
+          assignee: issue.fields?.assignee?.displayName || 'Unassigned',
+          reporter: issue.fields?.reporter?.displayName || 'Unknown',
+          created: issue.fields?.created,
+          updated: issue.fields?.updated,
+          url: `${baseUrl}/browse/${issue.key}`,
+        };
       }
 
       default:
@@ -833,6 +904,94 @@ async function executeJira(
   } catch (error) {
     console.error('Jira execution error:', error);
     return { error: error instanceof Error ? error.message : 'Jira request failed' };
+  }
+}
+
+// Execute File connector function
+async function executeFileConnector(
+  functionName: string,
+  args: Record<string, unknown>,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<unknown> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    switch (functionName) {
+      case 'file_list_documents': {
+        const limit = (args.limit as number) || 20;
+        
+        const { data, error } = await supabase
+          .from('documents')
+          .select('id, title, source_type, connector_id, created_at, metadata')
+          .eq('connector_id', 'file')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (error) {
+          console.error('File list error:', error);
+          return { error: 'Failed to list documents' };
+        }
+
+        return {
+          documents: data?.map((doc: any) => ({
+            id: doc.id,
+            title: doc.title,
+            type: doc.source_type,
+            uploadedAt: doc.created_at,
+            metadata: doc.metadata,
+          })) || [],
+          total: data?.length || 0,
+          message: `Found ${data?.length || 0} uploaded document(s)`,
+        };
+      }
+
+      case 'file_search_documents': {
+        const query = args.query as string;
+        const fileType = args.file_type as string;
+
+        if (!query) {
+          return { error: 'Search query is required' };
+        }
+
+        // Use keyword search function if available, otherwise basic search
+        let searchQuery = supabase
+          .from('documents')
+          .select('id, title, content, source_type, connector_id, metadata')
+          .eq('connector_id', 'file')
+          .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+          .limit(10);
+
+        if (fileType) {
+          searchQuery = searchQuery.eq('source_type', fileType);
+        }
+
+        const { data, error } = await searchQuery;
+
+        if (error) {
+          console.error('File search error:', error);
+          return { error: 'Failed to search documents' };
+        }
+
+        return {
+          results: data?.map((doc: any) => ({
+            id: doc.id,
+            title: doc.title,
+            snippet: doc.content?.substring(0, 300) + '...',
+            type: doc.source_type,
+            metadata: doc.metadata,
+          })) || [],
+          total: data?.length || 0,
+          message: `Found ${data?.length || 0} document(s) matching "${query}"`,
+        };
+      }
+
+      default:
+        return { error: `Unknown function: ${functionName}` };
+    }
+  } catch (error) {
+    console.error('File connector error:', error);
+    return { error: error instanceof Error ? error.message : 'File search failed' };
   }
 }
 
@@ -1587,12 +1746,8 @@ async function executeTool(
     return executeRAGSearch(args, supabaseUrl, supabaseKey);
   }
 
-  if (toolName.startsWith('whatsapp_')) {
-    const source = connectedSources.find(s => s.type === 'whatsapp' || s.id === 'whatsapp');
-    if (!source?.config) {
-      return { error: "WhatsApp not connected. Please connect WhatsApp Business API in Settings." };
-    }
-    return executeWhatsApp(toolName, args, source.config, supabaseUrl, supabaseKey);
+  if (toolName.startsWith('file_')) {
+    return executeFileConnector(toolName, args, supabaseUrl, supabaseKey);
   }
 
   if (toolName.startsWith('github_')) {
@@ -1654,10 +1809,9 @@ ${hasGmail ? '+ Gmail (connected via token)' : ''}
 - **ServiceNow**: Search articles, get counts, manage incidents
 - **Google Drive**: List and search files
 - **Gmail**: List, search, and read emails
-- **Jira**: Search and retrieve issues
-- **WhatsApp**: Send messages via WhatsApp Business API
+- **Jira**: List projects, search and retrieve issues
 - **GitHub**: List repos, search code, view files, list issues and PRs
-- **Documents**: Search uploaded files and knowledge bases
+- **Files**: Search and list uploaded documents
 
 ## CRITICAL: You MUST call functions when available. Never say "I can't" if a function exists.
 
@@ -1750,14 +1904,14 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
       return connectedTypes.has('github') || hasGitHubToken;
     }
     
-    // WhatsApp tools
-    if (name.startsWith('whatsapp_')) {
-      return connectedTypes.has('whatsapp');
-    }
-    
     // Gmail tools - check env var
     if (name.startsWith('gmail_')) {
       return connectedTypes.has('email') || hasGmailToken;
+    }
+    
+    // File connector tools - available if file connector is connected
+    if (name.startsWith('file_')) {
+      return connectedTypes.has('file');
     }
     
     // Document search - available if any document source connected

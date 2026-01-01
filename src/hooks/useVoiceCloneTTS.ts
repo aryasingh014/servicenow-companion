@@ -6,6 +6,7 @@ interface VoiceSettings {
   pitch: number;
   rate: number;
   selectedVoiceURI: string | null;
+  customVoiceUrl?: string;
 }
 
 interface UseVoiceCloneTTSReturn {
@@ -18,12 +19,13 @@ interface UseVoiceCloneTTSReturn {
   setLanguage: (language: string) => void;
   setPitch: (pitch: number) => void;
   setRate: (rate: number) => void;
+  setCustomVoice: (url: string | null) => void;
   availableVoices: SpeechSynthesisVoice[];
   isConfigured: boolean;
   error: string | null;
 }
 
-const STORAGE_KEY = 'voice-settings-v2';
+const STORAGE_KEY = 'voice-settings-v3';
 
 const defaultSettings: VoiceSettings = {
   voiceName: 'Default Assistant',
@@ -31,6 +33,7 @@ const defaultSettings: VoiceSettings = {
   pitch: 1.0,
   rate: 1.0,
   selectedVoiceURI: null,
+  customVoiceUrl: undefined,
 };
 
 export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
@@ -185,6 +188,10 @@ export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
     setVoiceSettings(prev => ({ ...prev, rate }));
   }, []);
 
+  const setCustomVoice = useCallback((url: string | null) => {
+    setVoiceSettings(prev => ({ ...prev, customVoiceUrl: url || undefined }));
+  }, []);
+
   return {
     isSpeaking,
     isLoading,
@@ -195,6 +202,7 @@ export const useVoiceCloneTTS = (): UseVoiceCloneTTSReturn => {
     setLanguage,
     setPitch,
     setRate,
+    setCustomVoice,
     availableVoices,
     isConfigured: true,
     error,
