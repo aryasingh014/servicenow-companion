@@ -285,6 +285,60 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "jira_create_issue",
+      description: "Create a new Jira issue/ticket. Use when user asks to create, add, or make a new issue, ticket, task, bug, or story in Jira.",
+      parameters: {
+        type: "object",
+        properties: {
+          project_key: { type: "string", description: "Project key (e.g., KAN, PROJ)" },
+          summary: { type: "string", description: "Issue title/summary" },
+          description: { type: "string", description: "Detailed description of the issue" },
+          issue_type: { type: "string", enum: ["Task", "Bug", "Story", "Epic"], description: "Type of issue (default: Task)" },
+          priority: { type: "string", enum: ["Highest", "High", "Medium", "Low", "Lowest"], description: "Priority level" },
+          assignee: { type: "string", description: "Assignee account ID or email (optional)" }
+        },
+        required: ["project_key", "summary"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "jira_update_issue",
+      description: "Update an existing Jira issue. Use when user asks to update, modify, change, edit, or set properties on a Jira issue.",
+      parameters: {
+        type: "object",
+        properties: {
+          issue_key: { type: "string", description: "Issue key (e.g., KAN-1, PROJ-123)" },
+          summary: { type: "string", description: "New issue title/summary" },
+          description: { type: "string", description: "New detailed description" },
+          status: { type: "string", description: "New status (e.g., 'To Do', 'In Progress', 'Done')" },
+          priority: { type: "string", enum: ["Highest", "High", "Medium", "Low", "Lowest"], description: "New priority level" },
+          assignee: { type: "string", description: "New assignee account ID or email" },
+          comment: { type: "string", description: "Add a comment to the issue" }
+        },
+        required: ["issue_key"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "jira_add_comment",
+      description: "Add a comment to an existing Jira issue. Use when user asks to comment on, add notes to, or reply to a Jira issue.",
+      parameters: {
+        type: "object",
+        properties: {
+          issue_key: { type: "string", description: "Issue key (e.g., KAN-1)" },
+          comment: { type: "string", description: "The comment text to add" }
+        },
+        required: ["issue_key", "comment"]
+      }
+    }
+  },
   // File connector tools
   {
     type: "function",
@@ -895,6 +949,262 @@ async function executeJira(
           created: issue.fields?.created,
           updated: issue.fields?.updated,
           url: `${baseUrl}/browse/${issue.key}`,
+        };
+      }
+
+      case 'jira_create_issue': {
+        const projectKey = args.project_key as string;
+        const summary = args.summary as string;
+        const description = args.description as string;
+        const issueType = (args.issue_type as string) || 'Task';
+        const priority = args.priority as string;
+        const assignee = args.assignee as string;
+
+        if (!projectKey || !summary) {
+          return { error: 'Project key and summary are required' };
+        }
+
+        // Build the issue payload
+        const issuePayload: any = {
+          fields: {
+            project: { key: projectKey },
+            summary: summary,
+            issuetype: { name: issueType },
+          }
+        };
+
+        // Add description in Atlassian Document Format (ADF)
+        if (description) {
+          issuePayload.fields.description = {
+            type: 'doc',
+            version: 1,
+            content: [
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', text: description }]
+              }
+            ]
+          };
+        }
+
+        // Add priority if specified
+        if (priority) {
+          issuePayload.fields.priority = { name: priority };
+        }
+
+        // Add assignee if specified
+        if (assignee) {
+          issuePayload.fields.assignee = { accountId: assignee };
+        }
+
+        console.log('Creating Jira issue:', JSON.stringify(issuePayload));
+
+        const response = await fetch(
+          `${baseUrl}/rest/api/3/issue`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(issuePayload),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Jira create issue error:', response.status, errorText);
+          return { error: `Failed to create issue: ${response.status} - ${errorText}` };
+        }
+
+        const createdIssue = await response.json();
+        return {
+          success: true,
+          key: createdIssue.key,
+          id: createdIssue.id,
+          url: `${baseUrl}/browse/${createdIssue.key}`,
+          message: `Successfully created issue ${createdIssue.key}: "${summary}"`,
+        };
+      }
+
+      case 'jira_update_issue': {
+        const issueKey = args.issue_key as string;
+        const summary = args.summary as string;
+        const description = args.description as string;
+        const status = args.status as string;
+        const priority = args.priority as string;
+        const assignee = args.assignee as string;
+        const comment = args.comment as string;
+
+        if (!issueKey) {
+          return { error: 'Issue key is required' };
+        }
+
+        const updatePayload: any = { fields: {} };
+
+        if (summary) {
+          updatePayload.fields.summary = summary;
+        }
+
+        if (description) {
+          updatePayload.fields.description = {
+            type: 'doc',
+            version: 1,
+            content: [
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', text: description }]
+              }
+            ]
+          };
+        }
+
+        if (priority) {
+          updatePayload.fields.priority = { name: priority };
+        }
+
+        if (assignee) {
+          updatePayload.fields.assignee = { accountId: assignee };
+        }
+
+        // Update fields if any were specified
+        if (Object.keys(updatePayload.fields).length > 0) {
+          console.log('Updating Jira issue:', issueKey, JSON.stringify(updatePayload));
+
+          const response = await fetch(
+            `${baseUrl}/rest/api/3/issue/${issueKey}`,
+            {
+              method: 'PUT',
+              headers: {
+                'Authorization': authHeader,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(updatePayload),
+            }
+          );
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Jira update error:', response.status, errorText);
+            return { error: `Failed to update issue: ${response.status}` };
+          }
+        }
+
+        // Handle status transition if specified
+        if (status) {
+          // First, get available transitions
+          const transitionsResp = await fetch(
+            `${baseUrl}/rest/api/3/issue/${issueKey}/transitions`,
+            { headers: { 'Authorization': authHeader, 'Accept': 'application/json' } }
+          );
+
+          if (transitionsResp.ok) {
+            const transitionsData = await transitionsResp.json();
+            const transition = transitionsData.transitions?.find(
+              (t: any) => t.name.toLowerCase() === status.toLowerCase() || t.to?.name?.toLowerCase() === status.toLowerCase()
+            );
+
+            if (transition) {
+              await fetch(
+                `${baseUrl}/rest/api/3/issue/${issueKey}/transitions`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': authHeader,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ transition: { id: transition.id } }),
+                }
+              );
+            } else {
+              console.warn(`Transition to "${status}" not found for issue ${issueKey}`);
+            }
+          }
+        }
+
+        // Add comment if specified
+        if (comment) {
+          await fetch(
+            `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': authHeader,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                body: {
+                  type: 'doc',
+                  version: 1,
+                  content: [
+                    {
+                      type: 'paragraph',
+                      content: [{ type: 'text', text: comment }]
+                    }
+                  ]
+                }
+              }),
+            }
+          );
+        }
+
+        return {
+          success: true,
+          key: issueKey,
+          url: `${baseUrl}/browse/${issueKey}`,
+          message: `Successfully updated issue ${issueKey}`,
+        };
+      }
+
+      case 'jira_add_comment': {
+        const issueKey = args.issue_key as string;
+        const comment = args.comment as string;
+
+        if (!issueKey || !comment) {
+          return { error: 'Issue key and comment are required' };
+        }
+
+        const response = await fetch(
+          `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              body: {
+                type: 'doc',
+                version: 1,
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: comment }]
+                  }
+                ]
+              }
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Jira add comment error:', response.status, errorText);
+          return { error: `Failed to add comment: ${response.status}` };
+        }
+
+        const commentData = await response.json();
+        return {
+          success: true,
+          key: issueKey,
+          commentId: commentData.id,
+          url: `${baseUrl}/browse/${issueKey}`,
+          message: `Successfully added comment to ${issueKey}`,
         };
       }
 
