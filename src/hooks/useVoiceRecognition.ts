@@ -49,18 +49,19 @@ declare global {
 }
 
 interface UseVoiceRecognitionReturn {
-  isListening: boolean;
+  isSessionActive: boolean;
   transcript: string;
-  startListening: () => void;
-  stopListening: () => void;
+  startSession: () => void;
+  endSession: () => void;
   isSupported: boolean;
 }
 
 export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
-  const [isListening, setIsListening] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isSupported, setIsSupported] = useState(false);
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  const sessionActiveRef = useRef(false); // Track session state for callbacks
 
   useEffect(() => {
     const SpeechRecognitionAPI =
@@ -88,41 +89,70 @@ export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
 
       recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error("Speech recognition error:", event.error);
-        setIsListening(false);
+        // Only restart if session is still active and error is recoverable
+        if (sessionActiveRef.current && event.error !== "not-allowed" && event.error !== "aborted") {
+          setTimeout(() => {
+            if (sessionActiveRef.current && recognitionRef.current) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                console.log("Could not restart recognition after error");
+              }
+            }
+          }, 100);
+        }
       };
 
       recognitionRef.current.onend = () => {
-        setIsListening(false);
+        // Auto-restart if session is still active (continuous mode)
+        if (sessionActiveRef.current && recognitionRef.current) {
+          setTimeout(() => {
+            if (sessionActiveRef.current && recognitionRef.current) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                console.log("Could not restart recognition");
+              }
+            }
+          }, 100);
+        }
       };
     }
 
     return () => {
+      sessionActiveRef.current = false;
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
     };
   }, []);
 
-  const startListening = useCallback(() => {
-    if (recognitionRef.current && !isListening) {
+  const startSession = useCallback(() => {
+    if (recognitionRef.current && !isSessionActive) {
       setTranscript("");
-      recognitionRef.current.start();
-      setIsListening(true);
+      sessionActiveRef.current = true;
+      setIsSessionActive(true);
+      try {
+        recognitionRef.current.start();
+      } catch (e) {
+        console.error("Failed to start recognition:", e);
+      }
     }
-  }, [isListening]);
+  }, [isSessionActive]);
 
-  const stopListening = useCallback(() => {
-    if (recognitionRef.current && isListening) {
+  const endSession = useCallback(() => {
+    sessionActiveRef.current = false;
+    setIsSessionActive(false);
+    if (recognitionRef.current) {
       recognitionRef.current.stop();
-      setIsListening(false);
     }
-  }, [isListening]);
+  }, []);
 
   return {
-    isListening,
+    isSessionActive,
     transcript,
-    startListening,
-    stopListening,
+    startSession,
+    endSession,
     isSupported,
   };
 };

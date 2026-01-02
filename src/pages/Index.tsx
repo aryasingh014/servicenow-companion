@@ -35,10 +35,10 @@ const Index = () => {
   } = useConversation();
 
   const {
-    isListening,
+    isSessionActive,
     transcript,
-    startListening,
-    stopListening,
+    startSession,
+    endSession,
     isSupported: voiceSupported,
   } = useVoiceRecognition();
 
@@ -62,12 +62,12 @@ const Index = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Handle voice transcript
+  // Handle voice transcript - process when transcript changes (during active session)
   useEffect(() => {
-    if (transcript && !isListening) {
+    if (transcript && isSessionActive) {
       handleUserMessage(transcript);
     }
-  }, [transcript, isListening]);
+  }, [transcript]);
 
   const handleUserMessage = useCallback(
     async (message: string) => {
@@ -191,14 +191,13 @@ const Index = () => {
           className="w-full lg:w-1/3 p-6 flex flex-col items-center justify-center border-r border-border/30"
         >
           <div className="flex flex-col items-center gap-8">
-            <VoiceVisualizer isListening={isListening} isSpeaking={isSpeaking} />
+            <VoiceVisualizer isListening={isSessionActive} isSpeaking={isSpeaking} />
 
             <div className="mt-8">
               <VoiceButton
-                isListening={isListening}
+                isSessionActive={isSessionActive}
                 isProcessing={isProcessing}
-                onClick={startListening}
-                onStop={stopListening}
+                onToggleSession={isSessionActive ? endSession : startSession}
               />
             </div>
 
