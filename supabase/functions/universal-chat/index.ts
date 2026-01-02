@@ -535,6 +535,95 @@ const AVAILABLE_TOOLS = [
         required: ["email_id"]
       }
     }
+  },
+  // Notion tools
+  {
+    type: "function",
+    function: {
+      name: "notion_search",
+      description: "Search Notion pages and databases. Use when user asks to find, search, or look for content in Notion.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search keywords" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "notion_list_databases",
+      description: "List all Notion databases the user has access to. Use when user asks to list, show, or see their databases.",
+      parameters: {
+        type: "object",
+        properties: {}
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "notion_get_page",
+      description: "Get the content of a specific Notion page by its ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          page_id: { type: "string", description: "The Notion page ID" }
+        },
+        required: ["page_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "notion_create_page",
+      description: "Create a new page in Notion. Use when user asks to create, add, or make a new page or note in Notion.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Title of the page" },
+          content: { type: "string", description: "Text content of the page" },
+          parent_page_id: { type: "string", description: "Parent page ID (optional, creates in workspace root if not specified)" }
+        },
+        required: ["title"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "notion_update_page",
+      description: "Update an existing Notion page. Use when user asks to update, edit, modify, or change a Notion page.",
+      parameters: {
+        type: "object",
+        properties: {
+          page_id: { type: "string", description: "The page ID to update" },
+          title: { type: "string", description: "New title (optional)" },
+          content: { type: "string", description: "New content to append (optional)" },
+          archived: { type: "boolean", description: "Set to true to archive/delete the page" }
+        },
+        required: ["page_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "notion_query_database",
+      description: "Query a Notion database to list its items. Use when user asks to see items in a database or list database contents.",
+      parameters: {
+        type: "object",
+        properties: {
+          database_id: { type: "string", description: "The database ID to query" },
+          filter_property: { type: "string", description: "Property name to filter by (optional)" },
+          filter_value: { type: "string", description: "Value to filter for (optional)" }
+        },
+        required: ["database_id"]
+      }
+    }
   }
 ];
 
@@ -849,12 +938,17 @@ async function executeJira(
   args: Record<string, unknown>,
   config: Record<string, string>
 ): Promise<unknown> {
-  const { url, email, apiToken } = config;
+  // Read from config first, then fall back to env vars
+  const url = config.url || Deno.env.get('JIRA_URL') || '';
+  const email = config.email || Deno.env.get('JIRA_EMAIL') || '';
+  const apiToken = config.apiToken || Deno.env.get('JIRA_API_TOKEN') || '';
 
   if (!url || !email || !apiToken) {
-    return { error: "Jira not configured. Please add credentials in Settings." };
+    return { error: "Jira not configured. Please add Jira URL, email, and API token in Settings or as secrets (JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN)." };
   }
 
+  console.log(`[Jira] Executing ${functionName} with URL: ${url}`);
+  
   const baseUrl = url.replace(/\/$/, '');
   const authHeader = 'Basic ' + btoa(`${email}:${apiToken}`);
 
@@ -1214,6 +1308,356 @@ async function executeJira(
   } catch (error) {
     console.error('Jira execution error:', error);
     return { error: error instanceof Error ? error.message : 'Jira request failed' };
+  }
+}
+
+// Execute Notion function
+async function executeNotion(
+  functionName: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const integrationToken = Deno.env.get('NOTION_INTEGRATION_TOKEN') || '';
+  
+  if (!integrationToken) {
+    return { error: "Notion not configured. Please add NOTION_INTEGRATION_TOKEN in secrets." };
+  }
+
+  console.log(`[Notion] Executing ${functionName}`);
+  
+  const headers = {
+    'Authorization': `Bearer ${integrationToken}`,
+    'Content-Type': 'application/json',
+    'Notion-Version': '2022-06-28',
+  };
+
+  try {
+    switch (functionName) {
+      case 'notion_search': {
+        const query = args.query as string || '';
+        
+        const response = await fetch('https://api.notion.com/v1/search', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ 
+            query, 
+            page_size: 20,
+            sort: { direction: 'descending', timestamp: 'last_edited_time' }
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Notion search error:', response.status, errorText);
+          if (response.status === 401) {
+            return { error: 'Notion authentication failed. Please check your integration token.' };
+          }
+          return { error: `Notion API error: ${response.status}` };
+        }
+
+        const data = await response.json();
+        const results = data.results || [];
+        
+        return {
+          results: results.map((item: any) => ({
+            id: item.id,
+            type: item.object,
+            title: item.properties?.title?.title?.[0]?.plain_text || 
+                   item.properties?.Name?.title?.[0]?.plain_text ||
+                   item.title?.[0]?.plain_text ||
+                   'Untitled',
+            url: item.url,
+            lastEdited: item.last_edited_time,
+          })),
+          total: results.length,
+          message: `Found ${results.length} result(s) in Notion`,
+        };
+      }
+
+      case 'notion_list_databases': {
+        const response = await fetch('https://api.notion.com/v1/search', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ 
+            filter: { property: 'object', value: 'database' },
+            page_size: 50 
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Notion list databases error:', response.status, errorText);
+          return { error: `Notion API error: ${response.status}` };
+        }
+
+        const data = await response.json();
+        const databases = data.results || [];
+        
+        return {
+          databases: databases.map((db: any) => ({
+            id: db.id,
+            title: db.title?.[0]?.plain_text || 'Untitled Database',
+            url: db.url,
+            properties: Object.keys(db.properties || {}),
+          })),
+          total: databases.length,
+          message: `Found ${databases.length} database(s) in Notion`,
+        };
+      }
+
+      case 'notion_get_page': {
+        const pageId = args.page_id as string;
+        if (!pageId) return { error: 'Page ID is required' };
+
+        // Get page metadata
+        const pageResp = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+          headers,
+        });
+
+        if (!pageResp.ok) {
+          return { error: `Could not fetch page: ${pageResp.status}` };
+        }
+
+        const page = await pageResp.json();
+
+        // Get page content (blocks)
+        const blocksResp = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`, {
+          headers,
+        });
+
+        let content = '';
+        if (blocksResp.ok) {
+          const blocksData = await blocksResp.json();
+          content = (blocksData.results || []).map((block: any) => {
+            const type = block.type;
+            const textContent = block[type]?.rich_text?.map((t: any) => t.plain_text).join('') || '';
+            return textContent;
+          }).filter(Boolean).join('\n');
+        }
+
+        const title = page.properties?.title?.title?.[0]?.plain_text ||
+                     page.properties?.Name?.title?.[0]?.plain_text ||
+                     'Untitled';
+
+        return {
+          id: page.id,
+          title,
+          url: page.url,
+          content: content || 'No text content found',
+          lastEdited: page.last_edited_time,
+        };
+      }
+
+      case 'notion_create_page': {
+        const title = args.title as string;
+        const content = args.content as string;
+        const parentPageId = args.parent_page_id as string;
+
+        if (!title) return { error: 'Title is required' };
+
+        // Build the page payload
+        const pagePayload: any = {
+          properties: {
+            title: {
+              title: [{ type: 'text', text: { content: title } }]
+            }
+          }
+        };
+
+        // Set parent - if parentPageId provided, use it; otherwise we need a parent
+        if (parentPageId) {
+          pagePayload.parent = { page_id: parentPageId };
+        } else {
+          // Search for a page to use as parent (first available page)
+          const searchResp = await fetch('https://api.notion.com/v1/search', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ 
+              filter: { property: 'object', value: 'page' },
+              page_size: 1 
+            }),
+          });
+          
+          if (searchResp.ok) {
+            const searchData = await searchResp.json();
+            if (searchData.results?.length > 0) {
+              pagePayload.parent = { page_id: searchData.results[0].id };
+            } else {
+              return { error: 'No parent page found. Please specify a parent_page_id or create a page in Notion first.' };
+            }
+          }
+        }
+
+        // Add content as blocks if provided
+        if (content) {
+          pagePayload.children = [
+            {
+              object: 'block',
+              type: 'paragraph',
+              paragraph: {
+                rich_text: [{ type: 'text', text: { content } }]
+              }
+            }
+          ];
+        }
+
+        console.log('Creating Notion page:', JSON.stringify(pagePayload));
+
+        const response = await fetch('https://api.notion.com/v1/pages', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(pagePayload),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Notion create page error:', response.status, errorText);
+          return { error: `Failed to create page: ${response.status} - ${errorText}` };
+        }
+
+        const createdPage = await response.json();
+        return {
+          success: true,
+          id: createdPage.id,
+          url: createdPage.url,
+          message: `Successfully created page "${title}" in Notion`,
+        };
+      }
+
+      case 'notion_update_page': {
+        const pageId = args.page_id as string;
+        const title = args.title as string;
+        const content = args.content as string;
+        const archived = args.archived as boolean;
+
+        if (!pageId) return { error: 'Page ID is required' };
+
+        // Update page properties if title or archived specified
+        if (title || archived !== undefined) {
+          const updatePayload: any = {};
+          
+          if (title) {
+            updatePayload.properties = {
+              title: {
+                title: [{ type: 'text', text: { content: title } }]
+              }
+            };
+          }
+          
+          if (archived !== undefined) {
+            updatePayload.archived = archived;
+          }
+
+          const response = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify(updatePayload),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Notion update page error:', response.status, errorText);
+            return { error: `Failed to update page: ${response.status}` };
+          }
+        }
+
+        // Append content as new block if provided
+        if (content) {
+          const blockPayload = {
+            children: [
+              {
+                object: 'block',
+                type: 'paragraph',
+                paragraph: {
+                  rich_text: [{ type: 'text', text: { content } }]
+                }
+              }
+            ]
+          };
+
+          await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify(blockPayload),
+          });
+        }
+
+        return {
+          success: true,
+          id: pageId,
+          message: `Successfully updated page${archived ? ' (archived)' : ''}`,
+        };
+      }
+
+      case 'notion_query_database': {
+        const databaseId = args.database_id as string;
+        const filterProperty = args.filter_property as string;
+        const filterValue = args.filter_value as string;
+
+        if (!databaseId) return { error: 'Database ID is required' };
+
+        const queryPayload: any = { page_size: 50 };
+        
+        // Add filter if specified
+        if (filterProperty && filterValue) {
+          queryPayload.filter = {
+            property: filterProperty,
+            rich_text: { contains: filterValue }
+          };
+        }
+
+        const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(queryPayload),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Notion query database error:', response.status, errorText);
+          return { error: `Failed to query database: ${response.status}` };
+        }
+
+        const data = await response.json();
+        const items = data.results || [];
+
+        return {
+          items: items.map((item: any) => {
+            const props: Record<string, any> = {};
+            for (const [key, value] of Object.entries(item.properties || {})) {
+              const prop = value as any;
+              if (prop.title) {
+                props[key] = prop.title?.[0]?.plain_text || '';
+              } else if (prop.rich_text) {
+                props[key] = prop.rich_text?.[0]?.plain_text || '';
+              } else if (prop.number !== undefined) {
+                props[key] = prop.number;
+              } else if (prop.select) {
+                props[key] = prop.select?.name || '';
+              } else if (prop.multi_select) {
+                props[key] = prop.multi_select?.map((s: any) => s.name).join(', ') || '';
+              } else if (prop.date) {
+                props[key] = prop.date?.start || '';
+              } else if (prop.checkbox !== undefined) {
+                props[key] = prop.checkbox;
+              }
+            }
+            return {
+              id: item.id,
+              properties: props,
+              url: item.url,
+            };
+          }),
+          total: items.length,
+          message: `Found ${items.length} item(s) in database`,
+        };
+      }
+
+      default:
+        return { error: `Unknown Notion function: ${functionName}` };
+    }
+  } catch (error) {
+    console.error('Notion execution error:', error);
+    return { error: error instanceof Error ? error.message : 'Notion request failed' };
   }
 }
 
@@ -2079,10 +2523,12 @@ async function executeTool(
 
   if (toolName.startsWith('jira_')) {
     const source = connectedSources.find(s => s.type === 'jira' || s.id === 'jira');
-    if (!source?.config) {
-      return { error: "Jira not connected. Please connect Jira in Settings." };
-    }
-    return executeJira(toolName, args, source.config);
+    // Pass config even if empty - executeJira will check env vars as fallback
+    return executeJira(toolName, args, source?.config || {});
+  }
+
+  if (toolName.startsWith('notion_')) {
+    return executeNotion(toolName, args);
   }
 
   if (toolName === 'search_documents') {
@@ -2126,6 +2572,8 @@ function buildSystemPrompt(connectedSources: ConnectedSource[]): string {
   const hasGitHub = !!Deno.env.get('GITHUB_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'github' || s.id === 'github');
   const hasGmail = !!Deno.env.get('GMAIL_ACCESS_TOKEN') || connectedSources.some(s => s.type === 'email' || s.id === 'email');
   const hasFileConnector = connectedSources.some(s => s.type === 'file' || s.id === 'file');
+  const hasNotion = !!Deno.env.get('NOTION_INTEGRATION_TOKEN') || connectedSources.some(s => s.type === 'notion' || s.id === 'notion');
+  const hasJira = !!(Deno.env.get('JIRA_URL') && Deno.env.get('JIRA_EMAIL') && Deno.env.get('JIRA_API_TOKEN')) || connectedSources.some(s => s.type === 'jira' || s.id === 'jira');
   
   return `You are NOVA, a conversational voice assistant. You communicate naturally like a helpful human colleague, not a system reading records.
 
@@ -2172,12 +2620,15 @@ When mentioning IDs, shorten them naturally:
 ${connectedSources.length > 0 ? sourceNames : 'None connected yet'}
 ${hasGitHub ? '+ GitHub (connected via token)' : ''}
 ${hasGmail ? '+ Gmail (connected via token)' : ''}
+${hasNotion ? '+ Notion (connected via token)' : ''}
+${hasJira ? '+ Jira (connected via token)' : ''}
 
 ## Your Capabilities:
-- **ServiceNow**: Search articles, get counts, manage incidents
+- **ServiceNow**: Search articles, get counts, manage incidents (create AND update)
 - **Google Drive**: List and search files
 - **Gmail**: List, search, and read emails
-- **Jira**: List projects, search and retrieve issues
+- **Jira**: List projects, search issues, create issues, update issues, add comments
+- **Notion**: Search pages, list databases, get page content, create pages, update pages, query databases
 - **GitHub**: List repos, search code, view files, list issues and PRs
 - **Files/Documents**: Search uploaded files (Excel, CSV, PDF, etc.) for employee data, IDs, departments, and any content
 
@@ -2211,12 +2662,37 @@ ${hasServiceNow ? `
 - "how many incidents" → servicenow_get_incident_count
 - Article number (KB...) → servicenow_get_article_by_number
 - Incident number (INC...) → servicenow_get_incident
+- "update incident X" → servicenow_update_incident
+- "resolve incident X" → servicenow_update_incident with state=6
+- "close incident X" → servicenow_update_incident with state=7
+- "add notes to incident X" → servicenow_update_incident with work_notes
 ` : ''}
 
 ${hasGoogleDrive ? `
 ## Google Drive Connected - Use These:
 - "list files" → google_drive_list_files
 - "search for X" → google_drive_search_files
+` : ''}
+
+${hasJira ? `
+## Jira Connected - Use These:
+- "list projects" → jira_list_projects
+- "find issues about X" → jira_search_issues
+- "show issue X" → jira_get_issue
+- "create issue/task/bug" → jira_create_issue (REQUIRES project_key and summary)
+- "update issue X" → jira_update_issue
+- "add comment to X" → jira_add_comment
+- "change status of X to Done" → jira_update_issue with status
+` : ''}
+
+${hasNotion ? `
+## Notion Connected - Use These:
+- "search Notion for X" → notion_search
+- "list my databases" → notion_list_databases
+- "show page X" → notion_get_page
+- "create a page called X" → notion_create_page
+- "update page X" → notion_update_page
+- "query database X" → notion_query_database
 ` : ''}
 
 ${hasGitHub ? `
@@ -2248,7 +2724,7 @@ ${hasFileConnector ? `
 - **REMEMBER: Never mention the file name in your response!**
 ` : ''}
 
-${connectedSources.length === 0 && !hasGitHub && !hasGmail && !hasFileConnector ? `
+${connectedSources.length === 0 && !hasGitHub && !hasGmail && !hasFileConnector && !hasNotion && !hasJira ? `
 ## No Sources Yet:
 Friendly guide them: "Hey! To get started, head to Settings and connect your tools - ServiceNow, Jira, Google Drive, whatever you use. Then come back and I can help you search and manage everything!"
 ` : ''}`
@@ -2259,6 +2735,8 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
   const connectedTypes = new Set(connectedSources.map(s => s.type || s.id));
   const hasGitHubToken = !!Deno.env.get('GITHUB_ACCESS_TOKEN');
   const hasGmailToken = !!Deno.env.get('GMAIL_ACCESS_TOKEN');
+  const hasNotionToken = !!Deno.env.get('NOTION_INTEGRATION_TOKEN');
+  const hasJiraEnvConfig = !!(Deno.env.get('JIRA_URL') && Deno.env.get('JIRA_EMAIL') && Deno.env.get('JIRA_API_TOKEN'));
   
   return AVAILABLE_TOOLS.filter(tool => {
     const name = tool.function.name;
@@ -2275,9 +2753,14 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
       return connectedTypes.has('google-drive') || hasServerToken;
     }
     
-    // Jira tools
+    // Jira tools - check both client config and env vars
     if (name.startsWith('jira_')) {
-      return connectedTypes.has('jira');
+      return connectedTypes.has('jira') || hasJiraEnvConfig;
+    }
+    
+    // Notion tools - check env var
+    if (name.startsWith('notion_')) {
+      return connectedTypes.has('notion') || hasNotionToken;
     }
     
     // GitHub tools - check env var
@@ -2298,7 +2781,7 @@ function getAvailableTools(connectedSources: ConnectedSource[]): typeof AVAILABL
     // Document search - available if any document source connected
     if (name === 'search_documents') {
       const docSources = ['file', 'confluence', 'notion', 'sharepoint'];
-      return docSources.some(s => connectedTypes.has(s)) || connectedSources.length > 0;
+      return docSources.some(s => connectedTypes.has(s)) || connectedSources.length > 0 || hasNotionToken;
     }
     
     return true;
