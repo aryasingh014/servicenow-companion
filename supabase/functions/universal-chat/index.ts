@@ -368,6 +368,70 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
+  // Employee data CRUD tools
+  {
+    type: "function",
+    function: {
+      name: "employee_get",
+      description: "Get details of a specific employee by Employee ID (e.g., EMP0000001). Use when user asks about a specific employee's details, role, department, salary, or any attribute.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee_id: { type: "string", description: "Employee ID like EMP0000001, EMP0000002" }
+        },
+        required: ["employee_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "employee_search",
+      description: "Search for employees by name, department, role, location, or other attributes. Use when user asks to find employees matching certain criteria.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query - name, department, role, location, etc." },
+          department: { type: "string", description: "Filter by department" },
+          role: { type: "string", description: "Filter by job title/role" },
+          location: { type: "string", description: "Filter by location" }
+        },
+        required: ["query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "employee_update",
+      description: "Update an employee's attributes such as role, department, location, status, etc. ALWAYS use this when user asks to change, update, modify, or set any employee attribute. Example: 'Change John's role to Software Engineer' or 'Update EMP0000001's department to Engineering'.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee_id: { type: "string", description: "Employee ID to update (e.g., EMP0000001)" },
+          field: { type: "string", description: "Field to update: Job_Title, Department, Location, Employment_Status, etc." },
+          new_value: { type: "string", description: "New value for the field" }
+        },
+        required: ["employee_id", "field", "new_value"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "employee_list",
+      description: "List all employees or filter by department, location, status. Use when user asks to show all employees or list employees in a specific department.",
+      parameters: {
+        type: "object",
+        properties: {
+          department: { type: "string", description: "Filter by department" },
+          location: { type: "string", description: "Filter by location" },
+          status: { type: "string", description: "Filter by employment status (Active, Inactive)" },
+          limit: { type: "number", description: "Max number to return (default 20)" }
+        }
+      }
+    }
+  },
   // RAG search
   {
     type: "function",
@@ -1782,6 +1846,278 @@ async function executeFileConnector(
   }
 }
 
+// Parse employee data from document content
+function parseEmployeeData(content: string): Array<Record<string, string>> {
+  const employees: Array<Record<string, string>> = [];
+  const lines = content.split('\n');
+  
+  // Find header line
+  let headers: string[] = [];
+  let dataStartIndex = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.includes('Employee_ID') || line.includes('Full_Name') || line.includes('Department')) {
+      headers = line.split(',').map(h => h.trim());
+      dataStartIndex = i + 1;
+      break;
+    }
+  }
+  
+  if (headers.length === 0) {
+    // Try first line as header
+    if (lines.length > 0) {
+      headers = lines[0].split(',').map(h => h.trim());
+      dataStartIndex = 1;
+    }
+  }
+  
+  // Parse data rows
+  for (let i = dataStartIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    const values = line.split(',').map(v => v.trim());
+    const employee: Record<string, string> = {};
+    
+    headers.forEach((header, index) => {
+      if (values[index] !== undefined) {
+        employee[header] = values[index];
+      }
+    });
+    
+    if (employee['Employee_ID'] || employee['Full_Name']) {
+      employees.push(employee);
+    }
+  }
+  
+  return employees;
+}
+
+// Execute Employee data function
+async function executeEmployeeFunction(
+  functionName: string,
+  args: Record<string, unknown>,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<unknown> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    // First, get all employee documents
+    const { data: docs, error: docsError } = await supabase
+      .from('documents')
+      .select('id, title, content, metadata')
+      .eq('connector_id', 'file')
+      .order('created_at', { ascending: false });
+
+    if (docsError) {
+      console.error('Error fetching employee documents:', docsError);
+      return { error: 'Failed to access employee data' };
+    }
+
+    // Parse all employees from all documents
+    let allEmployees: Array<Record<string, string> & { _docId: string; _docTitle: string }> = [];
+    for (const doc of (docs || [])) {
+      if (doc.content) {
+        const employees = parseEmployeeData(doc.content);
+        employees.forEach(emp => {
+          allEmployees.push({ ...emp, _docId: doc.id, _docTitle: doc.title });
+        });
+      }
+    }
+
+    console.log(`[Employee] Found ${allEmployees.length} employees in ${docs?.length || 0} documents`);
+
+    switch (functionName) {
+      case 'employee_get': {
+        const employeeId = (args.employee_id as string)?.toUpperCase();
+        if (!employeeId) {
+          return { error: 'Employee ID is required' };
+        }
+
+        const employee = allEmployees.find(e => 
+          e.Employee_ID?.toUpperCase() === employeeId || 
+          e['Employee ID']?.toUpperCase() === employeeId
+        );
+
+        if (!employee) {
+          return { error: `Employee ${employeeId} not found in uploaded data` };
+        }
+
+        const { _docId, _docTitle, ...employeeData } = employee;
+        return {
+          employee: employeeData,
+          source: _docTitle,
+          message: `Found employee ${employeeId}`,
+        };
+      }
+
+      case 'employee_search': {
+        const query = (args.query as string)?.toLowerCase() || '';
+        const department = (args.department as string)?.toLowerCase();
+        const role = (args.role as string)?.toLowerCase();
+        const location = (args.location as string)?.toLowerCase();
+
+        let results = allEmployees.filter(emp => {
+          // Search across all fields
+          const searchableText = Object.values(emp).join(' ').toLowerCase();
+          const matchesQuery = !query || searchableText.includes(query);
+          
+          // Apply filters
+          const matchesDept = !department || 
+            emp.Department?.toLowerCase().includes(department);
+          const matchesRole = !role || 
+            emp.Job_Title?.toLowerCase().includes(role) ||
+            emp['Job Title']?.toLowerCase().includes(role);
+          const matchesLocation = !location || 
+            emp.Location?.toLowerCase().includes(location);
+
+          return matchesQuery && matchesDept && matchesRole && matchesLocation;
+        });
+
+        return {
+          employees: results.slice(0, 20).map(({ _docId, _docTitle, ...e }) => e),
+          total: results.length,
+          message: `Found ${results.length} employee(s) matching criteria`,
+        };
+      }
+
+      case 'employee_list': {
+        const department = (args.department as string)?.toLowerCase();
+        const location = (args.location as string)?.toLowerCase();
+        const status = (args.status as string)?.toLowerCase();
+        const limit = (args.limit as number) || 20;
+
+        let results = allEmployees.filter(emp => {
+          const matchesDept = !department || 
+            emp.Department?.toLowerCase().includes(department);
+          const matchesLocation = !location || 
+            emp.Location?.toLowerCase().includes(location);
+          const matchesStatus = !status || 
+            emp.Employment_Status?.toLowerCase().includes(status) ||
+            emp['Employment Status']?.toLowerCase().includes(status);
+
+          return matchesDept && matchesLocation && matchesStatus;
+        });
+
+        return {
+          employees: results.slice(0, limit).map(({ _docId, _docTitle, ...e }) => e),
+          total: results.length,
+          message: `Found ${results.length} employee(s)`,
+        };
+      }
+
+      case 'employee_update': {
+        const employeeId = (args.employee_id as string)?.toUpperCase();
+        const field = args.field as string;
+        const newValue = args.new_value as string;
+
+        if (!employeeId || !field || !newValue) {
+          return { error: 'employee_id, field, and new_value are required' };
+        }
+
+        // Find the employee and their document
+        const employee = allEmployees.find(e => 
+          e.Employee_ID?.toUpperCase() === employeeId || 
+          e['Employee ID']?.toUpperCase() === employeeId
+        );
+
+        if (!employee) {
+          return { error: `Employee ${employeeId} not found` };
+        }
+
+        const docId = employee._docId;
+        
+        // Get the full document content
+        const { data: docData, error: docError } = await supabase
+          .from('documents')
+          .select('content')
+          .eq('id', docId)
+          .single();
+
+        if (docError || !docData) {
+          return { error: 'Failed to retrieve document for update' };
+        }
+
+        // Parse and update the content
+        let content = docData.content;
+        const lines = content.split('\n');
+        
+        // Find header line to get field index
+        let headers: string[] = [];
+        let headerIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('Employee_ID') || lines[i].includes('Full_Name')) {
+            headers = lines[i].split(',').map((h: string) => h.trim());
+            headerIndex = i;
+            break;
+          }
+        }
+
+        // Normalize field name (handle variations)
+        const normalizedField = field.replace(/[_ ]/g, '_');
+        let fieldIndex = headers.findIndex(h => 
+          h.replace(/[_ ]/g, '_').toLowerCase() === normalizedField.toLowerCase()
+        );
+
+        if (fieldIndex === -1) {
+          return { error: `Field "${field}" not found in data. Available fields: ${headers.join(', ')}` };
+        }
+
+        // Find and update the employee's row
+        let updated = false;
+        let oldValue = '';
+        for (let i = headerIndex + 1; i < lines.length; i++) {
+          const values = lines[i].split(',');
+          const empIdValue = values[headers.indexOf('Employee_ID')] || values[headers.indexOf('Employee ID')];
+          
+          if (empIdValue?.trim().toUpperCase() === employeeId) {
+            oldValue = values[fieldIndex]?.trim() || '';
+            values[fieldIndex] = newValue;
+            lines[i] = values.join(',');
+            updated = true;
+            break;
+          }
+        }
+
+        if (!updated) {
+          return { error: `Could not locate ${employeeId} in document for update` };
+        }
+
+        // Save updated content back to database
+        const newContent = lines.join('\n');
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ content: newContent, updated_at: new Date().toISOString() })
+          .eq('id', docId);
+
+        if (updateError) {
+          console.error('Document update error:', updateError);
+          return { error: 'Failed to save updated employee data' };
+        }
+
+        console.log(`[Employee] Updated ${employeeId}: ${field} from "${oldValue}" to "${newValue}"`);
+
+        return {
+          success: true,
+          employee_id: employeeId,
+          field: field,
+          old_value: oldValue,
+          new_value: newValue,
+          message: `Successfully updated ${employeeId}'s ${field} from "${oldValue}" to "${newValue}"`,
+        };
+      }
+
+      default:
+        return { error: `Unknown employee function: ${functionName}` };
+    }
+  } catch (error) {
+    console.error('Employee function error:', error);
+    return { error: error instanceof Error ? error.message : 'Employee operation failed' };
+  }
+}
+
 // Execute Google Drive function
 async function executeGoogleDrive(
   functionName: string,
@@ -2537,6 +2873,10 @@ async function executeTool(
 
   if (toolName.startsWith('file_')) {
     return executeFileConnector(toolName, args, supabaseUrl, supabaseKey);
+  }
+
+  if (toolName.startsWith('employee_')) {
+    return executeEmployeeFunction(toolName, args, supabaseUrl, supabaseKey);
   }
 
   if (toolName.startsWith('github_')) {
