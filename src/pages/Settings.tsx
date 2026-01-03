@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2, Volume2, Plug } from "lucide-react";
+import { ArrowLeft, Search, CheckCircle2, Sparkles, Link2, Volume2, Plug, Database } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { ConnectorCard } from "@/components/ConnectorCard";
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useVoiceCloneTTS } from "@/hooks/useVoiceCloneTTS";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DocumentsManager } from "@/components/DocumentsManager";
 
 const STORAGE_KEY = "connected-sources";
 
@@ -279,10 +280,10 @@ export default function Settings() {
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-8">
+          <TabsList className="grid w-full grid-cols-3 mb-8">
             <TabsTrigger value="voice" className="flex items-center gap-2">
               <Volume2 className="w-4 h-4" />
-              Voice Settings
+              Voice
             </TabsTrigger>
             <TabsTrigger value="connectors" className="flex items-center gap-2">
               <Plug className="w-4 h-4" />
@@ -292,6 +293,10 @@ export default function Settings() {
                   {connectedCount}
                 </Badge>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="documents" className="flex items-center gap-2">
+              <Database className="w-4 h-4" />
+              Documents
             </TabsTrigger>
           </TabsList>
 
@@ -434,6 +439,11 @@ export default function Settings() {
                 </p>
               </div>
             )}
+          </TabsContent>
+
+          {/* Documents Tab */}
+          <TabsContent value="documents">
+            <DocumentsManager />
           </TabsContent>
         </Tabs>
       </main>
