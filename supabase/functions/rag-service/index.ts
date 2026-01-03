@@ -25,6 +25,16 @@ interface RAGRequest {
 // We still index and search via keyword (full-text) so the File connector works reliably.
 // Embeddings can be re-enabled later without changing the frontend API.
 
+// Sanitize content to remove null characters and other problematic Unicode
+function sanitizeContent(content: string): string {
+  // Remove null characters (\u0000) that PostgreSQL can't handle
+  // Also remove other control characters except newline, tab, carriage return
+  return content
+    .replace(/\u0000/g, '') // Remove null bytes
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // Remove control chars except \t, \n, \r
+    .trim();
+}
+
 // Hash content for deduplication
 function hashContent(content: string): string {
   let hash = 0;
@@ -62,7 +72,9 @@ serve(async (req) => {
 
         const results = [];
         for (const doc of documents) {
-          const contentHash = hashContent(doc.content);
+          // Sanitize content before processing
+          const sanitizedContent = sanitizeContent(doc.content);
+          const contentHash = hashContent(sanitizedContent);
           
           // Check for existing document with same hash
           const { data: existing } = await supabase
@@ -86,8 +98,8 @@ serve(async (req) => {
               connector_id: connectorId,
               source_type: sourceType,
               source_id: doc.sourceId,
-              title: doc.title,
-              content: doc.content.substring(0, 50000), // Limit content size
+              title: sanitizeContent(doc.title),
+              content: sanitizedContent.substring(0, 50000), // Limit content size
               content_hash: contentHash,
               metadata: doc.metadata || {},
             })
