@@ -54,6 +54,8 @@ interface UseVoiceRecognitionReturn {
   startSession: () => void;
   endSession: () => void;
   isSupported: boolean;
+  pauseListening: () => void;
+  resumeListening: () => void;
 }
 
 export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
@@ -62,6 +64,7 @@ export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
   const [isSupported, setIsSupported] = useState(false);
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const sessionActiveRef = useRef(false); // Track session state for callbacks
+  const isPausedRef = useRef(false); // Track if listening is paused (e.g., while TTS is speaking)
 
   useEffect(() => {
     const SpeechRecognitionAPI =
@@ -104,10 +107,10 @@ export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
       };
 
       recognitionRef.current.onend = () => {
-        // Auto-restart if session is still active (continuous mode)
-        if (sessionActiveRef.current && recognitionRef.current) {
+        // Auto-restart if session is still active and not paused (continuous mode)
+        if (sessionActiveRef.current && !isPausedRef.current && recognitionRef.current) {
           setTimeout(() => {
-            if (sessionActiveRef.current && recognitionRef.current) {
+            if (sessionActiveRef.current && !isPausedRef.current && recognitionRef.current) {
               try {
                 recognitionRef.current.start();
               } catch (e) {
@@ -131,6 +134,7 @@ export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
     if (recognitionRef.current && !isSessionActive) {
       setTranscript("");
       sessionActiveRef.current = true;
+      isPausedRef.current = false;
       setIsSessionActive(true);
       try {
         recognitionRef.current.start();
@@ -142,9 +146,34 @@ export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
 
   const endSession = useCallback(() => {
     sessionActiveRef.current = false;
+    isPausedRef.current = false;
     setIsSessionActive(false);
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+    }
+  }, []);
+
+  // Pause listening (used when TTS is speaking to avoid echo)
+  const pauseListening = useCallback(() => {
+    isPausedRef.current = true;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.log("Could not pause recognition");
+      }
+    }
+  }, []);
+
+  // Resume listening after TTS finishes
+  const resumeListening = useCallback(() => {
+    isPausedRef.current = false;
+    if (sessionActiveRef.current && recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch (e) {
+        console.log("Could not resume recognition");
+      }
     }
   }, []);
 
@@ -154,5 +183,7 @@ export const useVoiceRecognition = (): UseVoiceRecognitionReturn => {
     startSession,
     endSession,
     isSupported,
+    pauseListening,
+    resumeListening,
   };
 };
