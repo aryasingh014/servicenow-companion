@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, User, Save, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -15,14 +15,26 @@ const Profile = () => {
   const { user, profile, updateProfile, loading } = useAuth();
   const { toast } = useToast();
   
-  const [displayName, setDisplayName] = useState(profile?.display_name || "");
   const [saving, setSaving] = useState(false);
   
-  // Preferences state
-  const preferences = (profile?.preferences as Record<string, unknown>) || {};
-  const [darkMode, setDarkMode] = useState(preferences.darkMode as boolean ?? true);
-  const [emailNotifications, setEmailNotifications] = useState(preferences.emailNotifications as boolean ?? true);
-  const [voiceEnabled, setVoiceEnabled] = useState(preferences.voiceEnabled as boolean ?? true);
+  // Initialize state from profile when it loads
+  const [displayName, setDisplayName] = useState("");
+  const [darkMode, setDarkMode] = useState(true);
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [initialized, setInitialized] = useState(false);
+
+  // Sync state when profile loads
+  useEffect(() => {
+    if (profile && !initialized) {
+      setDisplayName(profile.display_name || "");
+      const prefs = (profile.preferences as Record<string, unknown>) || {};
+      setDarkMode(prefs.darkMode as boolean ?? true);
+      setEmailNotifications(prefs.emailNotifications as boolean ?? true);
+      setVoiceEnabled(prefs.voiceEnabled as boolean ?? true);
+      setInitialized(true);
+    }
+  }, [profile, initialized]);
 
   if (loading) {
     return (
