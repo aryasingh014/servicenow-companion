@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle, Loader2, LogIn } from "lucide-react";
+import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -170,14 +170,8 @@ const Index = () => {
 
       <Header />
 
-      {/* Connection Status & Auth */}
-      <div className="absolute top-20 right-6 z-10 flex items-center gap-2">
-        {!user && !authLoading && (
-          <Button variant="outline" size="sm" onClick={() => navigate("/auth")}>
-            <LogIn className="w-4 h-4 mr-2" />
-            Sign In
-          </Button>
-        )}
+      {/* Connection Status */}
+      <div className="absolute top-20 right-6 z-10">
         <Badge
           variant={connectedSources.length > 0 ? "default" : "secondary"}
           className="flex items-center gap-1.5 cursor-pointer"
