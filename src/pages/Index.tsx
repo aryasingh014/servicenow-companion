@@ -5,7 +5,7 @@ import { Header } from "@/components/Header";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
 import { ChatMessage } from "@/components/ChatMessage";
-import { QuickActions } from "@/components/QuickActions";
+
 import { ConversationSidebar } from "@/components/ConversationSidebar";
 
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
@@ -314,17 +314,7 @@ const Index = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Actions */}
-          {messages.length <= 1 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="px-6 pb-4"
-            >
-              <p className="text-sm text-muted-foreground mb-3">Quick actions:</p>
-              <QuickActions onAction={handleQuickAction} />
-            </motion.div>
-          )}
+          {/* Removed quick actions */}
 
           {/* Input Area */}
           <motion.div
