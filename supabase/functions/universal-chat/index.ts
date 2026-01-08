@@ -432,6 +432,41 @@ const AVAILABLE_TOOLS = [
       }
     }
   },
+  {
+    type: "function",
+    function: {
+      name: "employee_create",
+      description: "Create a new employee record. Use when user asks to add, create, register, or hire a new employee.",
+      parameters: {
+        type: "object",
+        properties: {
+          full_name: { type: "string", description: "Employee's full name" },
+          email: { type: "string", description: "Employee's email address" },
+          department: { type: "string", description: "Department (e.g., Engineering, Sales, HR)" },
+          job_title: { type: "string", description: "Job title/role" },
+          location: { type: "string", description: "Work location" },
+          salary: { type: "number", description: "Annual salary (optional)" },
+          start_date: { type: "string", description: "Start date (YYYY-MM-DD)" }
+        },
+        required: ["full_name", "department", "job_title"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "employee_delete",
+      description: "Delete/remove an employee record. Use when user asks to delete, remove, terminate, or fire an employee.",
+      parameters: {
+        type: "object",
+        properties: {
+          employee_id: { type: "string", description: "Employee ID to delete (e.g., EMP0000001)" },
+          reason: { type: "string", description: "Reason for deletion (optional)" }
+        },
+        required: ["employee_id"]
+      }
+    }
+  },
   // RAG search
   {
     type: "function",
@@ -2106,6 +2141,193 @@ async function executeEmployeeFunction(
           old_value: oldValue,
           new_value: newValue,
           message: `Successfully updated ${employeeId}'s ${field} from "${oldValue}" to "${newValue}"`,
+        };
+      }
+
+      case 'employee_create': {
+        const fullName = args.full_name as string;
+        const email = args.email as string || '';
+        const department = args.department as string;
+        const jobTitle = args.job_title as string;
+        const location = args.location as string || 'Remote';
+        const salary = args.salary as number || 0;
+        const startDate = args.start_date as string || new Date().toISOString().split('T')[0];
+
+        if (!fullName || !department || !jobTitle) {
+          return { error: 'full_name, department, and job_title are required' };
+        }
+
+        // Find the most recent document to add the employee to
+        const targetDoc = docs?.[0];
+        if (!targetDoc) {
+          return { error: 'No employee document found. Please upload an employee file first.' };
+        }
+
+        // Generate new employee ID
+        const existingIds = allEmployees
+          .map(e => e.Employee_ID || e['Employee ID'] || '')
+          .filter(id => id.match(/^EMP\d+$/))
+          .map(id => parseInt(id.replace('EMP', '')));
+        const maxId = existingIds.length > 0 ? Math.max(...existingIds) : 0;
+        const newId = `EMP${String(maxId + 1).padStart(7, '0')}`;
+
+        // Get the document content
+        const { data: docData, error: docError } = await supabase
+          .from('documents')
+          .select('content')
+          .eq('id', targetDoc.id)
+          .single();
+
+        if (docError || !docData) {
+          return { error: 'Failed to access employee document' };
+        }
+
+        // Parse headers from the document
+        const lines = docData.content.split('\n');
+        let headers: string[] = [];
+        let headerIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('Employee_ID') || lines[i].includes('Full_Name')) {
+            headers = lines[i].split(',').map((h: string) => h.trim());
+            headerIndex = i;
+            break;
+          }
+        }
+
+        if (headerIndex === -1) {
+          return { error: 'Could not find header row in employee document' };
+        }
+
+        // Build new row based on headers
+        const newRow = headers.map(header => {
+          const normalizedHeader = header.replace(/[_ ]/g, '_').toLowerCase();
+          switch (normalizedHeader) {
+            case 'employee_id': return newId;
+            case 'full_name': return fullName;
+            case 'email': return email || `${fullName.toLowerCase().replace(/\s+/g, '.')}@company.com`;
+            case 'department': return department;
+            case 'job_title': return jobTitle;
+            case 'location': return location;
+            case 'salary': case 'annual_salary': return salary.toString();
+            case 'start_date': case 'hire_date': return startDate;
+            case 'employment_status': return 'Active';
+            default: return '';
+          }
+        });
+
+        // Add new row to content
+        lines.push(newRow.join(','));
+        const newContent = lines.join('\n');
+
+        // Save updated content
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ content: newContent, updated_at: new Date().toISOString() })
+          .eq('id', targetDoc.id);
+
+        if (updateError) {
+          console.error('Failed to save new employee:', updateError);
+          return { error: 'Failed to save new employee' };
+        }
+
+        console.log(`[Employee] Created new employee: ${newId} - ${fullName}`);
+
+        return {
+          success: true,
+          employee_id: newId,
+          full_name: fullName,
+          department,
+          job_title: jobTitle,
+          location,
+          message: `Successfully created employee ${newId}: ${fullName} as ${jobTitle} in ${department}`,
+        };
+      }
+
+      case 'employee_delete': {
+        const employeeId = (args.employee_id as string)?.toUpperCase();
+        const reason = args.reason as string || 'Not specified';
+
+        if (!employeeId) {
+          return { error: 'employee_id is required' };
+        }
+
+        // Find the employee
+        const employee = allEmployees.find(e => 
+          e.Employee_ID?.toUpperCase() === employeeId || 
+          e['Employee ID']?.toUpperCase() === employeeId
+        );
+
+        if (!employee) {
+          return { error: `Employee ${employeeId} not found` };
+        }
+
+        const docId = employee._docId;
+        const employeeName = employee.Full_Name || employee['Full Name'] || employeeId;
+
+        // Get the document content
+        const { data: docData, error: docError } = await supabase
+          .from('documents')
+          .select('content')
+          .eq('id', docId)
+          .single();
+
+        if (docError || !docData) {
+          return { error: 'Failed to access employee document' };
+        }
+
+        // Parse and remove the employee's row
+        const lines = docData.content.split('\n');
+        let headers: string[] = [];
+        let headerIndex = -1;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('Employee_ID') || lines[i].includes('Full_Name')) {
+            headers = lines[i].split(',').map((h: string) => h.trim());
+            headerIndex = i;
+            break;
+          }
+        }
+
+        const employeeIdColIndex = headers.indexOf('Employee_ID') !== -1 
+          ? headers.indexOf('Employee_ID') 
+          : headers.indexOf('Employee ID');
+
+        // Filter out the employee's row
+        let deleted = false;
+        const newLines = lines.filter((line: string, idx: number) => {
+          if (idx <= headerIndex) return true; // Keep header rows
+          const values = line.split(',');
+          const lineEmpId = values[employeeIdColIndex]?.trim().toUpperCase();
+          if (lineEmpId === employeeId) {
+            deleted = true;
+            return false; // Remove this line
+          }
+          return true;
+        });
+
+        if (!deleted) {
+          return { error: `Could not locate ${employeeId} in document for deletion` };
+        }
+
+        // Save updated content
+        const newContent = newLines.join('\n');
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ content: newContent, updated_at: new Date().toISOString() })
+          .eq('id', docId);
+
+        if (updateError) {
+          console.error('Failed to delete employee:', updateError);
+          return { error: 'Failed to save after employee deletion' };
+        }
+
+        console.log(`[Employee] Deleted ${employeeId} (${employeeName}). Reason: ${reason}`);
+
+        return {
+          success: true,
+          employee_id: employeeId,
+          employee_name: employeeName,
+          reason,
+          message: `Successfully deleted employee ${employeeId} (${employeeName})`,
         };
       }
 

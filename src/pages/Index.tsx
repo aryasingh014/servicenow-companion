@@ -1,15 +1,17 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Send, Trash2, Volume2, VolumeX, Database, CheckCircle2, AlertCircle, Loader2, LogIn } from "lucide-react";
 import { Header } from "@/components/Header";
 import { VoiceVisualizer } from "@/components/VoiceVisualizer";
 import { VoiceButton } from "@/components/VoiceButton";
 import { ChatMessage } from "@/components/ChatMessage";
 import { QuickActions } from "@/components/QuickActions";
+import { ConversationSidebar } from "@/components/ConversationSidebar";
 
 import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
 import { useVoiceCloneTTS } from "@/hooks/useVoiceCloneTTS";
 import { useConversation } from "@/hooks/useConversation";
+import { useAuth } from "@/hooks/useAuth";
 import { streamChat } from "@/services/chatService";
 import { getConnectedSources } from "@/services/connectorService";
 import { Input } from "@/components/ui/input";
@@ -17,14 +19,17 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import { Message } from "@/types/chat";
 
 const Index = () => {
   const [inputText, setInputText] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [connectedSources, setConnectedSources] = useState<string[]>([]);
+  const [showSidebar, setShowSidebar] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
 
   const {
     messages,
@@ -32,6 +37,9 @@ const Index = () => {
     clearMessages,
     isProcessing,
     setIsProcessing,
+    conversationId,
+    loadConversation,
+    startNewConversation,
   } = useConversation();
 
   const {
@@ -162,8 +170,14 @@ const Index = () => {
 
       <Header />
 
-      {/* Connection Status */}
-      <div className="absolute top-20 right-6 z-10">
+      {/* Connection Status & Auth */}
+      <div className="absolute top-20 right-6 z-10 flex items-center gap-2">
+        {!user && !authLoading && (
+          <Button variant="outline" size="sm" onClick={() => navigate("/auth")}>
+            <LogIn className="w-4 h-4 mr-2" />
+            Sign In
+          </Button>
+        )}
         <Badge
           variant={connectedSources.length > 0 ? "default" : "secondary"}
           className="flex items-center gap-1.5 cursor-pointer"
@@ -183,7 +197,19 @@ const Index = () => {
         </Badge>
       </div>
 
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+      <main className="flex-1 flex overflow-hidden">
+        {/* Conversation Sidebar - only when logged in */}
+        {user && showSidebar && (
+          <ConversationSidebar
+            currentConversationId={conversationId}
+            onSelectConversation={(conv) => loadConversation(conv.id, conv.title, conv.messages)}
+            onNewConversation={startNewConversation}
+            onConversationDeleted={(id) => {
+              if (conversationId === id) startNewConversation();
+            }}
+          />
+        )}
+
         {/* Left Panel - Voice Interface */}
         <motion.section
           initial={{ opacity: 0, x: -20 }}
