@@ -48,6 +48,8 @@ const Index = () => {
     startSession,
     endSession,
     isSupported: voiceSupported,
+    pauseListening,
+    resumeListening,
   } = useVoiceRecognition();
 
   const { 
@@ -69,6 +71,15 @@ const Index = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Pause voice recognition while TTS is speaking to prevent echo
+  useEffect(() => {
+    if (isSpeaking) {
+      pauseListening();
+    } else {
+      resumeListening();
+    }
+  }, [isSpeaking, pauseListening, resumeListening]);
 
   // Handle voice transcript - process when transcript changes (during active session)
   useEffect(() => {
