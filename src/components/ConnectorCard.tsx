@@ -7,6 +7,7 @@ import { connectorIcons } from "@/components/ConnectorIcons";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getConnectorConfig } from "@/services/connectorService";
+import { getFreshOAuthToken, isOAuthConnector } from "@/services/oauthService";
 
 interface ConnectorCardProps {
   connector: Connector;
@@ -32,14 +33,15 @@ export const ConnectorCard = ({
     setTestStatus('idle');
     
     try {
-      const config = await getConnectorConfig(connector.id);
+      let config = await getConnectorConfig(connector.id);
       
-      // For OAuth connectors (google-drive, email, calendar), check for accessToken
-      const oauthConnectors = ['google-drive', 'email', 'calendar'];
-      if (oauthConnectors.includes(connector.id)) {
-        if (!config?.accessToken) {
-          throw new Error('Please reconnect with Google OAuth to get an access token.');
+      // For OAuth connectors, get a fresh token (auto-refreshes if expired)
+      if (isOAuthConnector(connector.id)) {
+        const freshToken = await getFreshOAuthToken(connector.id);
+        if (!freshToken) {
+          throw new Error('Please reconnect with OAuth to get a valid access token.');
         }
+        config = { ...config, accessToken: freshToken };
       } else if (!config) {
         throw new Error('No configuration found. Please configure the connector first.');
       }
@@ -78,9 +80,10 @@ export const ConnectorCard = ({
     setIsIndexing(true);
     
     try {
-      const config = await getConnectorConfig(connector.id);
-      if (!config) {
-        throw new Error('No configuration found');
+      // Get fresh OAuth token for email indexing
+      const freshToken = await getFreshOAuthToken('email');
+      if (!freshToken) {
+        throw new Error('Please reconnect your email to get a valid access token.');
       }
 
       toast({
@@ -92,7 +95,7 @@ export const ConnectorCard = ({
         body: {
           connector: 'email',
           action: 'indexEmails',
-          config,
+          config: { accessToken: freshToken },
           params: { limit: 50 },
         },
       });

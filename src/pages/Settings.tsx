@@ -82,6 +82,7 @@ export default function Settings() {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.provider_token;
+      const refreshToken = session?.provider_refresh_token;
       const email = session?.user?.email || '';
 
       if (!accessToken) {
@@ -117,17 +118,22 @@ export default function Settings() {
 
       if (cancelled) return;
 
-      // Save to database instead of localStorage
-      const result = await saveConnector(
-        connectorParam,
-        { email },
-        { access_token: accessToken }
-      );
+      // Save tokens via the OAuth connector edge function for secure storage
+      const { error: saveError } = await supabase.functions.invoke('oauth-connector', {
+        body: {
+          action: 'save-tokens',
+          connectorId: connectorParam,
+          accessToken,
+          refreshToken: refreshToken || undefined,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(), // 1 hour default
+          email,
+        },
+      });
 
-      if (!result.success) {
+      if (saveError) {
         toast({
           title: "Failed to save connection",
-          description: result.error || "Please try again.",
+          description: saveError.message || "Please try again.",
           variant: 'destructive',
         });
         return;
