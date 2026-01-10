@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { FileText, AlertCircle, ShoppingCart, RefreshCw } from "lucide-react";
+import { FileText, AlertCircle, ShoppingCart, RefreshCw, Database } from "lucide-react";
 import { serviceNow } from "@/services/serviceNowService";
+import { isConnectorConnected } from "@/services/connectorService";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,8 +18,21 @@ export const ServiceNowDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const checkConnection = useCallback(async () => {
+    const connected = await isConnectorConnected('servicenow');
+    setIsConnected(connected);
+    return connected;
+  }, []);
 
   const fetchStats = useCallback(async (showRefresh = false) => {
+    const connected = await checkConnection();
+    if (!connected) {
+      setLoading(false);
+      return;
+    }
+
     if (showRefresh) setIsRefreshing(true);
     try {
       const [articles, incidents, catalogItems] = await Promise.all([
@@ -30,22 +44,43 @@ export const ServiceNowDashboard = () => {
       setLastUpdated(new Date());
     } catch (error) {
       console.error("Failed to fetch ServiceNow stats:", error);
+      // Set stats to 0 on error - don't show mock data
+      setStats({ articles: 0, incidents: 0, catalogItems: 0 });
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [checkConnection]);
 
   useEffect(() => {
     fetchStats();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => fetchStats(), 30000);
+    // Auto-refresh every 30 seconds if connected
+    const interval = setInterval(() => {
+      if (isConnected) fetchStats();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [fetchStats]);
+  }, [fetchStats, isConnected]);
 
   const handleManualRefresh = () => {
     fetchStats(true);
   };
+
+  // If not connected, show a message instead of stats
+  if (!isConnected && !loading) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-muted-foreground">ServiceNow Stats</h3>
+        <Card className="border-border/50 bg-secondary/30">
+          <CardContent className="p-4 flex flex-col items-center justify-center gap-2">
+            <Database className="w-8 h-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground text-center">
+              Connect ServiceNow in Settings to view live stats
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const statCards = [
     {
