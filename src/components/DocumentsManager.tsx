@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { FileText, Trash2, Eye, RefreshCw, Search, Database } from "lucide-react";
+import { FileText, Trash2, Eye, RefreshCw, Search, Database, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Document {
   id: string;
@@ -44,10 +45,22 @@ export function DocumentsManager() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const fetchDocuments = async () => {
     setLoading(true);
     try {
+      // Check if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      setIsAuthenticated(!!user);
+      
+      if (!user) {
+        setDocuments([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch documents scoped to the current user via RLS
       const { data, error } = await supabase
         .from("documents")
         .select("*")
@@ -69,6 +82,13 @@ export function DocumentsManager() {
 
   useEffect(() => {
     fetchDocuments();
+    
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      fetchDocuments();
+    });
+    
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleView = (doc: Document) => {
@@ -183,10 +203,28 @@ export function DocumentsManager() {
         />
       </div>
 
+      {/* Authentication Warning */}
+      {!isAuthenticated && !loading && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Please sign in to view your documents. Each user has their own private document storage.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Documents Table */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : !isAuthenticated ? (
+        <div className="text-center py-12 border border-dashed border-border rounded-lg">
+          <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="font-medium mb-2">Sign in required</h3>
+          <p className="text-sm text-muted-foreground">
+            Sign in to view and manage your documents.
+          </p>
         </div>
       ) : filteredDocuments.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-border rounded-lg">
