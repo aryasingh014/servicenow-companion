@@ -61,10 +61,13 @@ const Index = () => {
     error: ttsError,
   } = useVoiceCloneTTS();
 
-  // Check connected sources on mount
+  // Check connected sources on mount (now async)
   useEffect(() => {
-    const sources = getConnectedSources();
-    setConnectedSources(sources.map(s => s.name));
+    const loadSources = async () => {
+      const sources = await getConnectedSources();
+      setConnectedSources(sources.map(s => s.name));
+    };
+    loadSources();
   }, []);
 
   // Scroll to bottom when messages change
