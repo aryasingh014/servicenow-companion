@@ -54,6 +54,7 @@ export type Database = {
           source_type: string
           title: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           connector_id: string
@@ -67,6 +68,7 @@ export type Database = {
           source_type: string
           title: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           connector_id?: string
@@ -80,6 +82,7 @@ export type Database = {
           source_type?: string
           title?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -113,45 +116,122 @@ export type Database = {
         }
         Relationships: []
       }
+      user_connectors: {
+        Row: {
+          config: Json
+          connector_id: string
+          created_at: string
+          id: string
+          last_synced_at: string | null
+          name: string
+          oauth_tokens: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          config?: Json
+          connector_id: string
+          created_at?: string
+          id?: string
+          last_synced_at?: string | null
+          name: string
+          oauth_tokens?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          config?: Json
+          connector_id?: string
+          created_at?: string
+          id?: string
+          last_synced_at?: string | null
+          name?: string
+          oauth_tokens?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      hybrid_search: {
-        Args: {
-          connector_filter?: string
-          match_count?: number
-          query_embedding: string
-          query_text: string
-        }
-        Returns: {
-          connector_id: string
-          content: string
-          id: string
-          keyword_rank: number
-          metadata: Json
-          similarity: number
-          source_type: string
-          title: string
-        }[]
-      }
-      keyword_search: {
-        Args: {
-          connector_filter?: string
-          match_count?: number
-          query_text: string
-        }
-        Returns: {
-          connector_id: string
-          content: string
-          id: string
-          keyword_rank: number
-          metadata: Json
-          source_type: string
-          title: string
-        }[]
-      }
+      hybrid_search:
+        | {
+            Args: {
+              connector_filter?: string
+              match_count?: number
+              query_embedding: string
+              query_text: string
+            }
+            Returns: {
+              connector_id: string
+              content: string
+              id: string
+              keyword_rank: number
+              metadata: Json
+              similarity: number
+              source_type: string
+              title: string
+            }[]
+          }
+        | {
+            Args: {
+              connector_filter?: string
+              match_count?: number
+              query_embedding: string
+              query_text: string
+              user_id_filter?: string
+            }
+            Returns: {
+              connector_id: string
+              content: string
+              id: string
+              keyword_rank: number
+              metadata: Json
+              similarity: number
+              source_type: string
+              title: string
+            }[]
+          }
+      keyword_search:
+        | {
+            Args: {
+              connector_filter?: string
+              match_count?: number
+              query_text: string
+            }
+            Returns: {
+              connector_id: string
+              content: string
+              id: string
+              keyword_rank: number
+              metadata: Json
+              source_type: string
+              title: string
+            }[]
+          }
+        | {
+            Args: {
+              connector_filter?: string
+              match_count?: number
+              query_text: string
+              user_id_filter?: string
+            }
+            Returns: {
+              connector_id: string
+              content: string
+              id: string
+              keyword_rank: number
+              metadata: Json
+              source_type: string
+              title: string
+            }[]
+          }
     }
     Enums: {
       [_ in never]: never
