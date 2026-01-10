@@ -8,7 +8,7 @@ export const connectors: Connector[] = [
     description: 'Connect to ServiceNow for IT service management',
     icon: '⚙️',
     category: 'popular',
-    isConnected: true,
+    isConnected: false, // User must connect their own ServiceNow instance
     configFields: [
       { name: 'instanceUrl', label: 'Instance URL', type: 'url', required: true, placeholder: 'https://your-instance.service-now.com' },
       { name: 'username', label: 'Username', type: 'text', required: true, placeholder: 'admin' },
