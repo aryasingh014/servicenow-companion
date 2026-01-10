@@ -7,15 +7,20 @@ import { ConnectorCard } from "@/components/ConnectorCard";
 import { ConnectorConfigDialog } from "@/components/ConnectorConfigDialog";
 import { VoiceCloneSettings } from "@/components/VoiceCloneSettings";
 import { connectors as defaultConnectors, connectorCategories } from "@/data/connectors";
-import { Connector, ConnectorConfig } from "@/types/connector";
+import { Connector } from "@/types/connector";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useVoiceCloneTTS } from "@/hooks/useVoiceCloneTTS";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DocumentsManager } from "@/components/DocumentsManager";
-
-const STORAGE_KEY = "connected-sources";
+import { 
+  fetchUserConnectors, 
+  saveConnector, 
+  disconnectConnector,
+  UserConnector 
+} from "@/services/connectorService";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -25,16 +30,52 @@ export default function Settings() {
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("connectors");
+  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
   
   // Voice settings
   const { voiceSettings, setVoice, setPitch, setRate, setCustomVoice, availableVoices, speak, isSpeaking } = useVoiceCloneTTS();
-  const [connectedConfigs, setConnectedConfigs] = useState<ConnectorConfig[]>([]);
+  const [userConnectors, setUserConnectors] = useState<UserConnector[]>([]);
+
+  // Load user connectors from database
+  const loadUserConnectors = async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+    
+    try {
+      const connectors = await fetchUserConnectors();
+      setUserConnectors(connectors);
+      
+      // Update connector list with connected status
+      setConnectorList(prev => 
+        prev.map(connector => {
+          const userConnector = connectors.find(c => c.connector_id === connector.id);
+          return {
+            ...connector,
+            isConnected: userConnector?.status === 'connected'
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Error loading connectors:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load connectors on mount and when user changes
+  useEffect(() => {
+    loadUserConnectors();
+  }, [user]);
 
   // Handle OAuth callback for Google Drive, Email, and Calendar
   useEffect(() => {
     const connectorParam = searchParams.get('connector');
     const validConnectors = ['google-drive', 'email', 'calendar'];
     if (!connectorParam || !validConnectors.includes(connectorParam)) return;
+    if (!user) return; // Need to be logged in
 
     let cancelled = false;
 
@@ -76,33 +117,24 @@ export default function Settings() {
 
       if (cancelled) return;
 
-      const newConfig: ConnectorConfig = {
-        connectorId: connectorParam,
-        config: {
-          accessToken,
-          email,
-        },
-        connectedAt: new Date().toISOString(),
-      };
+      // Save to database instead of localStorage
+      const result = await saveConnector(
+        connectorParam,
+        { email },
+        { access_token: accessToken }
+      );
 
-      // Save to connected configs
-      const saved = localStorage.getItem(STORAGE_KEY);
-      let configs: ConnectorConfig[] = saved ? JSON.parse(saved) : [];
-      const existingIndex = configs.findIndex(c => c.connectorId === connectorParam);
-
-      if (existingIndex >= 0) {
-        configs[existingIndex] = newConfig;
-      } else {
-        configs.push(newConfig);
+      if (!result.success) {
+        toast({
+          title: "Failed to save connection",
+          description: result.error || "Please try again.",
+          variant: 'destructive',
+        });
+        return;
       }
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
-      setConnectedConfigs(configs);
-
-      // Update connector status
-      setConnectorList((prev) =>
-        prev.map((c) => (c.id === connectorParam ? { ...c, isConnected: true } : c))
-      );
+      // Reload connectors from database
+      await loadUserConnectors();
 
       const displayNames: Record<string, string> = {
         'email': 'Email (Gmail)',
@@ -127,77 +159,42 @@ export default function Settings() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, navigate]);
-
-  // Load connected configs from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-
-    try {
-      let configs: ConnectorConfig[] = JSON.parse(saved);
-      
-      // Clean up any OAuth connectors that have invalid config (clientId/clientSecret instead of accessToken)
-      const oauthConnectorIds = ['google-drive', 'email', 'calendar'];
-      let hasInvalidConfig = false;
-      
-      configs = configs.filter((cfg) => {
-        if (oauthConnectorIds.includes(cfg.connectorId)) {
-          // OAuth connectors MUST have accessToken, not clientId/clientSecret
-          if (!cfg.config?.accessToken && (cfg.config?.clientId || cfg.config?.clientSecret)) {
-            console.warn(`Removing invalid OAuth config for ${cfg.connectorId} - has clientId/clientSecret instead of accessToken`);
-            hasInvalidConfig = true;
-            return false; // Remove this invalid config
-          }
-        }
-        return true;
-      });
-      
-      // Save cleaned config if we removed any invalid entries
-      if (hasInvalidConfig) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(configs));
-      }
-      
-      setConnectedConfigs(configs);
-
-      // Update connector list with connected status.
-      // For OAuth connectors, only treat as "connected" if we have a usable accessToken.
-      setConnectorList((prev) =>
-        prev.map((connector) => {
-          const cfg = configs.find((c) => c.connectorId === connector.id);
-          const hasConfig = Boolean(cfg);
-          const hasOAuthToken = Boolean(cfg?.config?.accessToken);
-
-          const isConnected = connector.useOAuth ? hasOAuthToken : hasConfig;
-          return { ...connector, isConnected };
-        })
-      );
-    } catch (e) {
-      console.error("Error parsing saved connectors:", e);
-    }
-  }, []);
+  }, [searchParams, navigate, user]);
 
   const handleConnect = (connector: Connector) => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to connect data sources.",
+        variant: "destructive",
+      });
+      navigate("/auth");
+      return;
+    }
     setSelectedConnector(connector);
     setDialogOpen(true);
   };
 
-  const handleDisconnect = (connectorId: string) => {
+  const handleDisconnect = async (connectorId: string) => {
     const connector = connectorList.find((c) => c.id === connectorId);
     
-    // Update local state
-    const newConfigs = connectedConfigs.filter((c) => c.connectorId !== connectorId);
-    setConnectedConfigs(newConfigs);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfigs));
+    const result = await disconnectConnector(connectorId);
     
-    setConnectorList((prev) =>
-      prev.map((c) => (c.id === connectorId ? { ...c, isConnected: false } : c))
-    );
-    
-    toast({
-      title: "Disconnected",
-      description: `${connector?.name || "Connector"} has been disconnected.`,
-    });
+    if (result.success) {
+      // Reload connectors from database
+      await loadUserConnectors();
+      
+      toast({
+        title: "Disconnected",
+        description: `${connector?.name || "Connector"} has been disconnected.`,
+      });
+    } else {
+      toast({
+        title: "Failed to disconnect",
+        description: result.error || "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleConfigure = (connector: Connector) => {
@@ -208,41 +205,36 @@ export default function Settings() {
   const handleSaveConfig = async (connectorId: string, config: Record<string, string>) => {
     const connector = connectorList.find((c) => c.id === connectorId);
     
-    // Create new config
-    const newConfig: ConnectorConfig = {
-      connectorId,
-      config,
-      connectedAt: new Date().toISOString(),
-    };
+    // Save to database
+    const result = await saveConnector(connectorId, config);
     
-    // Update configs
-    const existingIndex = connectedConfigs.findIndex((c) => c.connectorId === connectorId);
-    let newConfigs: ConnectorConfig[];
-    
-    if (existingIndex >= 0) {
-      newConfigs = [...connectedConfigs];
-      newConfigs[existingIndex] = newConfig;
+    if (result.success) {
+      // Reload connectors from database
+      await loadUserConnectors();
+      
+      toast({
+        title: connector?.isConnected ? "Configuration Updated" : "Connected Successfully! 🎉",
+        description: `${connector?.name} is now ready. Ask NOVA anything about your ${connector?.name} data!`,
+      });
     } else {
-      newConfigs = [...connectedConfigs, newConfig];
+      toast({
+        title: "Failed to save",
+        description: result.error || "Please try again.",
+        variant: "destructive",
+      });
     }
-    
-    setConnectedConfigs(newConfigs);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfigs));
-    
-    // Update connector status
-    setConnectorList((prev) =>
-      prev.map((c) => (c.id === connectorId ? { ...c, isConnected: true } : c))
-    );
-    
-    toast({
-      title: connector?.isConnected ? "Configuration Updated" : "Connected Successfully! 🎉",
-      description: `${connector?.name} is now ready. Ask NOVA anything about your ${connector?.name} data!`,
-    });
   };
 
-  const getExistingConfig = (connectorId: string) => {
-    const config = connectedConfigs.find((c) => c.connectorId === connectorId);
-    return config?.config;
+  const getExistingConfig = (connectorId: string): Record<string, string> | undefined => {
+    const userConnector = userConnectors.find(c => c.connector_id === connectorId);
+    if (!userConnector) return undefined;
+    
+    const config = { ...userConnector.config };
+    // Include OAuth token in config for display purposes
+    if (userConnector.oauth_tokens?.access_token) {
+      config.accessToken = userConnector.oauth_tokens.access_token;
+    }
+    return config;
   };
 
   const filteredConnectors = connectorList.filter(
@@ -321,6 +313,20 @@ export default function Settings() {
 
           {/* Connectors Tab */}
           <TabsContent value="connectors" className="space-y-8">
+            {/* Not logged in warning */}
+            {!user && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 text-center">
+                  <p className="text-amber-600 dark:text-amber-400">
+                    Please <button onClick={() => navigate("/auth")} className="underline font-medium">sign in</button> to connect and manage your data sources.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
             {/* Connected Sources Summary */}
             <AnimatePresence>
               {connectedCount > 0 && (
@@ -361,7 +367,7 @@ export default function Settings() {
 
             {/* Getting Started Banner (when no sources connected) */}
             <AnimatePresence>
-              {connectedCount === 0 && (
+              {connectedCount === 0 && user && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -398,8 +404,15 @@ export default function Settings() {
               </div>
             </motion.div>
 
+            {/* Loading state */}
+            {isLoading && (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            )}
+
             {/* Connector Categories */}
-            {connectorCategories.map((category, categoryIndex) => {
+            {!isLoading && connectorCategories.map((category, categoryIndex) => {
               const categoryConnectors = filteredConnectors.filter(
                 (c) => c.category === category.id
               );
@@ -432,7 +445,7 @@ export default function Settings() {
               );
             })}
 
-            {filteredConnectors.length === 0 && (
+            {!isLoading && filteredConnectors.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-muted-foreground">
                   No connectors found matching "{searchQuery}"

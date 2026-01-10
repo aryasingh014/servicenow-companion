@@ -106,17 +106,21 @@ async function readFileContent(file: globalThis.File): Promise<string> {
   });
 }
 
-// Index documents to the backend RAG service
+// Index documents to the backend RAG service (includes user authentication for multi-tenant isolation)
 async function indexDocuments(
   connectorId: string,
   documents: Array<{ title: string; content: string; sourceId?: string }>
 ): Promise<{ success: boolean; results?: unknown[]; error?: string }> {
+  // Get current user for multi-tenant document isolation
+  const { data: { user } } = await supabase.auth.getUser();
+  
   const { data, error } = await supabase.functions.invoke('rag-service', {
     body: {
       action: 'index',
       connectorId,
       sourceType: 'file',
       documents,
+      userId: user?.id || null, // Pass user ID for isolation
     },
   });
 

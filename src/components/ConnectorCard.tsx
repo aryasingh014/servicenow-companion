@@ -32,7 +32,7 @@ export const ConnectorCard = ({
     setTestStatus('idle');
     
     try {
-      const config = getConnectorConfig(connector.id);
+      const config = await getConnectorConfig(connector.id);
       
       // For OAuth connectors (google-drive, email, calendar), check for accessToken
       const oauthConnectors = ['google-drive', 'email', 'calendar'];
@@ -78,7 +78,7 @@ export const ConnectorCard = ({
     setIsIndexing(true);
     
     try {
-      const config = getConnectorConfig(connector.id);
+      const config = await getConnectorConfig(connector.id);
       if (!config) {
         throw new Error('No configuration found');
       }

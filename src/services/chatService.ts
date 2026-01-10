@@ -14,8 +14,8 @@ export async function streamChat({
   onError: (error: Error) => void;
 }) {
   try {
-    // Get connected sources for the universal chat
-    const connectedSources = getConnectedSources();
+    // Get connected sources for the universal chat (now async - fetches from database)
+    const connectedSources = await getConnectedSources();
     
     // Filter out any OAuth sources that don't have a valid accessToken
     const oauthConnectorIds = ['google-drive', 'email', 'calendar'];

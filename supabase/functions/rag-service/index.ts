@@ -10,6 +10,7 @@ interface RAGRequest {
   action: 'index' | 'search' | 'delete';
   connectorId?: string | null;
   sourceType?: string | null;
+  userId?: string | null; // User ID for multi-tenant isolation
   documents?: Array<{
     sourceId?: string;
     title: string;
@@ -46,6 +47,37 @@ function hashContent(content: string): string {
   return hash.toString(16);
 }
 
+// Extract user ID from authorization header
+async function getUserIdFromAuth(req: Request, supabaseUrl: string, supabaseKey: string): Promise<string | null> {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  
+  // Create a new client with the user's token to get their info
+  const userClient = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+  
+  try {
+    const { data: { user }, error } = await userClient.auth.getUser(token);
+    if (error || !user) {
+      console.log('Could not get user from token:', error?.message);
+      return null;
+    }
+    return user.id;
+  } catch (e) {
+    console.log('Error getting user:', e);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -59,7 +91,13 @@ serve(async (req) => {
     const request: RAGRequest = await req.json();
     const { action, connectorId = null, sourceType = null, documents, query, limit = 10 } = request;
 
-    console.log(`RAG Service: ${action} for ${connectorId}/${sourceType}`);
+    // Get user ID from auth header or request body
+    let userId = request.userId || null;
+    if (!userId) {
+      userId = await getUserIdFromAuth(req, supabaseUrl, supabaseKey);
+    }
+
+    console.log(`RAG Service: ${action} for ${connectorId}/${sourceType} (user: ${userId || 'anonymous'})`);
 
     switch (action) {
       case 'index': {
@@ -76,13 +114,18 @@ serve(async (req) => {
           const sanitizedContent = sanitizeContent(doc.content);
           const contentHash = hashContent(sanitizedContent);
           
-          // Check for existing document with same hash
-          const { data: existing } = await supabase
+          // Check for existing document with same hash (scoped to user if available)
+          let existingQuery = supabase
             .from('documents')
             .select('id')
             .eq('connector_id', connectorId)
-            .eq('content_hash', contentHash)
-            .maybeSingle();
+            .eq('content_hash', contentHash);
+          
+          if (userId) {
+            existingQuery = existingQuery.eq('user_id', userId);
+          }
+          
+          const { data: existing } = await existingQuery.maybeSingle();
 
           if (existing) {
             console.log(`Skipping duplicate: ${doc.title}`);
@@ -90,19 +133,25 @@ serve(async (req) => {
             continue;
           }
 
+          // Insert document with user_id for multi-tenant isolation
+          const documentData: Record<string, unknown> = {
+            connector_id: connectorId,
+            source_type: sourceType,
+            source_id: doc.sourceId,
+            title: sanitizeContent(doc.title),
+            content: sanitizedContent.substring(0, 50000), // Limit content size
+            content_hash: contentHash,
+            metadata: doc.metadata || {},
+          };
 
-          // Insert document (keyword-only indexing; embedding omitted)
+          // Add user_id if available for multi-tenant isolation
+          if (userId) {
+            documentData.user_id = userId;
+          }
+
           const { data, error } = await supabase
             .from('documents')
-            .insert({
-              connector_id: connectorId,
-              source_type: sourceType,
-              source_id: doc.sourceId,
-              title: sanitizeContent(doc.title),
-              content: sanitizedContent.substring(0, 50000), // Limit content size
-              content_hash: contentHash,
-              metadata: doc.metadata || {},
-            })
+            .insert(documentData)
             .select('id')
             .single();
 
@@ -110,10 +159,9 @@ serve(async (req) => {
             console.error(`Failed to index ${doc.title}:`, error);
             results.push({ title: doc.title, status: 'error', error: error.message });
           } else {
-            console.log(`✅ Indexed: ${doc.title}`);
+            console.log(`✅ Indexed: ${doc.title} (user: ${userId || 'global'})`);
             results.push({ title: doc.title, status: 'indexed', id: data.id });
           }
-
         }
 
         return new Response(JSON.stringify({ success: true, results }), {
@@ -126,19 +174,20 @@ serve(async (req) => {
           throw new Error('No search query provided');
         }
 
-        console.log(`Searching for: "${query}" in ${connectorId || 'all connectors'}`);
+        console.log(`Searching for: "${query}" in ${connectorId || 'all connectors'} (user: ${userId || 'anonymous'})`);
 
-        // Keyword-only search (full-text)
+        // Keyword search with user_id filter for multi-tenant isolation
         const { data, error } = await supabase.rpc('keyword_search', {
           query_text: query,
           match_count: limit,
           connector_filter: connectorId || null,
+          user_id_filter: userId || null, // Filter by user for isolation
         });
 
         const results = error ? [] : (data || []);
         if (error) console.error('Keyword search failed:', error);
 
-        console.log(`Found ${results.length} results`);
+        console.log(`Found ${results.length} results for user ${userId || 'anonymous'}`);
         console.log(`Sample results: ${JSON.stringify(results.slice(0, 2)).substring(0, 500)}`);
 
         return new Response(
@@ -154,16 +203,29 @@ serve(async (req) => {
       }
 
       case 'delete': {
-        const { error } = await supabase
+        // Delete documents scoped to user if available
+        let deleteQuery = supabase
           .from('documents')
           .delete()
           .eq('connector_id', connectorId);
+        
+        if (userId) {
+          deleteQuery = deleteQuery.eq('user_id', userId);
+        }
+
+        const { error } = await deleteQuery;
 
         if (error) throw error;
 
-        return new Response(JSON.stringify({ success: true, message: `Deleted all documents for ${connectorId}` }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: `Deleted all documents for ${connectorId}${userId ? ` (user: ${userId})` : ''}` 
+          }), 
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
       }
 
       default:
