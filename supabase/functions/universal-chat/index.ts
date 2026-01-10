@@ -18,6 +18,24 @@ interface ChatRequest {
   connectedSources: ConnectedSource[];
 }
 
+// Extract user ID from authorization header
+async function getUserIdFromAuth(req: Request, supabaseUrl: string, supabaseKey: string): Promise<string | null> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) return null;
+  
+  try {
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) return null;
+    return user.id;
+  } catch {
+    return null;
+  }
+}
+
 // Cache for refreshed access tokens (in-memory, per request)
 const tokenCache: Record<string, { accessToken: string; expiresAt: number }> = {};
 
@@ -1765,7 +1783,8 @@ async function executeFileConnector(
   functionName: string,
   args: Record<string, unknown>,
   supabaseUrl: string,
-  supabaseKey: string
+  supabaseKey: string,
+  userId?: string | null
 ): Promise<unknown> {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -1774,12 +1793,19 @@ async function executeFileConnector(
       case 'file_list_documents': {
         const limit = (args.limit as number) || 20;
         
-        const { data, error } = await supabase
+        let query = supabase
           .from('documents')
           .select('id, title, source_type, connector_id, created_at, metadata')
           .eq('connector_id', 'file')
           .order('created_at', { ascending: false })
           .limit(limit);
+
+        // Filter by user_id for multi-tenant isolation
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           console.error('File list error:', error);
@@ -1807,15 +1833,22 @@ async function executeFileConnector(
           return { error: 'Search query is required' };
         }
 
-        console.log(`[File Search] Searching for "${query}" in file documents`);
+        console.log(`[File Search] Searching for "${query}" in file documents for user ${userId || 'anonymous'}`);
 
         // Try keyword search function first for better results
         try {
-          const { data: keywordData, error: keywordError } = await supabase.rpc('keyword_search', {
+          const rpcParams: Record<string, unknown> = {
             query_text: query,
             match_count: 10,
             connector_filter: 'file',
-          });
+          };
+          
+          // Add user_id filter for multi-tenant isolation
+          if (userId) {
+            rpcParams.user_id_filter = userId;
+          }
+          
+          const { data: keywordData, error: keywordError } = await supabase.rpc('keyword_search', rpcParams);
 
           if (!keywordError && keywordData && keywordData.length > 0) {
             console.log(`[File Search] Found ${keywordData.length} results via keyword search`);
@@ -1844,6 +1877,11 @@ async function executeFileConnector(
           .eq('connector_id', 'file')
           .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
           .limit(10);
+
+        // Filter by user_id for multi-tenant isolation
+        if (userId) {
+          searchQuery = searchQuery.eq('user_id', userId);
+        }
 
         if (fileType) {
           searchQuery = searchQuery.eq('source_type', fileType);
@@ -1934,17 +1972,25 @@ async function executeEmployeeFunction(
   functionName: string,
   args: Record<string, unknown>,
   supabaseUrl: string,
-  supabaseKey: string
+  supabaseKey: string,
+  userId?: string | null
 ): Promise<unknown> {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // First, get all employee documents
-    const { data: docs, error: docsError } = await supabase
+    // First, get all employee documents (filtered by user if available)
+    let query = supabase
       .from('documents')
       .select('id, title, content, metadata')
       .eq('connector_id', 'file')
       .order('created_at', { ascending: false });
+
+    // Filter by user_id for multi-tenant isolation
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data: docs, error: docsError } = await query;
 
     if (docsError) {
       console.error('Error fetching employee documents:', docsError);
@@ -1962,7 +2008,7 @@ async function executeEmployeeFunction(
       }
     }
 
-    console.log(`[Employee] Found ${allEmployees.length} employees in ${docs?.length || 0} documents`);
+    console.log(`[Employee] Found ${allEmployees.length} employees in ${docs?.length || 0} documents for user ${userId || 'anonymous'}`);
 
     switch (functionName) {
       case 'employee_get': {
@@ -2560,7 +2606,8 @@ async function executeGoogleDrive(
 async function executeRAGSearch(
   args: Record<string, unknown>,
   supabaseUrl: string,
-  supabaseKey: string
+  supabaseKey: string,
+  userId?: string | null
 ): Promise<unknown> {
   try {
     const response = await fetch(`${supabaseUrl}/functions/v1/rag-service`, {
@@ -2575,6 +2622,7 @@ async function executeRAGSearch(
         sourceType: args.source_type || null,
         query: args.query,
         limit: 10,
+        userId: userId || null, // Pass user ID for multi-tenant isolation
       }),
     });
 
@@ -3055,9 +3103,10 @@ async function executeTool(
   args: Record<string, unknown>,
   connectedSources: ConnectedSource[],
   supabaseUrl: string,
-  supabaseKey: string
+  supabaseKey: string,
+  userId?: string | null
 ): Promise<unknown> {
-  console.log(`Executing tool: ${toolName}`, args);
+  console.log(`Executing tool: ${toolName}`, args, `for user: ${userId || 'anonymous'}`);
 
   if (toolName.startsWith('servicenow_')) {
     const source = connectedSources.find(s => s.type === 'servicenow' || s.id === 'servicenow');
@@ -3090,15 +3139,15 @@ async function executeTool(
   }
 
   if (toolName === 'search_documents') {
-    return executeRAGSearch(args, supabaseUrl, supabaseKey);
+    return executeRAGSearch(args, supabaseUrl, supabaseKey, userId);
   }
 
   if (toolName.startsWith('file_')) {
-    return executeFileConnector(toolName, args, supabaseUrl, supabaseKey);
+    return executeFileConnector(toolName, args, supabaseUrl, supabaseKey, userId);
   }
 
   if (toolName.startsWith('employee_')) {
-    return executeEmployeeFunction(toolName, args, supabaseUrl, supabaseKey);
+    return executeEmployeeFunction(toolName, args, supabaseUrl, supabaseKey, userId);
   }
 
   if (toolName.startsWith('github_')) {
@@ -3366,7 +3415,9 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    console.log('Universal chat:', { messageCount: messages.length, sources: connectedSources.map(s => s.id) });
+    // Extract user ID from auth header for multi-tenant isolation
+    const userId = await getUserIdFromAuth(req, SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') || '');
+    console.log('Universal chat:', { messageCount: messages.length, sources: connectedSources.map(s => s.id), userId: userId || 'anonymous' });
 
     const systemPrompt = buildSystemPrompt(connectedSources);
     const availableTools = getAvailableTools(connectedSources);
@@ -3435,12 +3486,14 @@ serve(async (req) => {
         const functionName = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments || '{}');
         
+        // Pass userId for multi-tenant data isolation
         const toolResult = await executeTool(
           functionName,
           args,
           connectedSources,
           SUPABASE_URL,
-          SUPABASE_KEY
+          SUPABASE_KEY,
+          userId
         );
 
         toolResults.push({
